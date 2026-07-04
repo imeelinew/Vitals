@@ -3,14 +3,14 @@ import Darwin
 
 struct RunningAppInfo {
     let app: NSRunningApplication
-    let residentBytes: UInt64
+    let memoryBytes: UInt64
 
     var displayName: String {
         app.localizedName ?? app.bundleIdentifier ?? "PID \(app.processIdentifier)"
     }
 
     var memoryText: String {
-        let mb = Double(residentBytes) / 1_048_576
+        let mb = Double(memoryBytes) / 1_048_576
         if mb >= 1024 {
             return String(format: "%.1f GB", mb / 1024)
         }
@@ -21,15 +21,15 @@ struct RunningAppInfo {
 enum AppListSection {
     static func collectAll() -> [RunningAppInfo] {
         let ownPid = ProcessInfo.processInfo.processIdentifier
-        let grouped = groupedResidentBytes()
+        let grouped = groupedMemoryBytes()
         var infos: [RunningAppInfo] = []
         for app in NSWorkspace.shared.runningApplications {
             guard app.activationPolicy == .regular, app.processIdentifier != ownPid else { continue }
             let bundlePath = app.bundleURL?.path ?? ""
-            let bytes = grouped[bundlePath] ?? residentBytes(for: app.processIdentifier)
-            infos.append(RunningAppInfo(app: app, residentBytes: bytes))
+            let bytes = grouped[bundlePath] ?? memoryBytes(for: app.processIdentifier)
+            infos.append(RunningAppInfo(app: app, memoryBytes: bytes))
         }
-        infos.sort { $0.residentBytes > $1.residentBytes }
+        infos.sort { $0.memoryBytes > $1.memoryBytes }
         return infos
     }
 
@@ -41,7 +41,7 @@ enum AppListSection {
         }
     }
 
-    private static func groupedResidentBytes() -> [String: UInt64] {
+    private static func groupedMemoryBytes() -> [String: UInt64] {
         let bufferCount = proc_listpids(UInt32(PROC_ALL_PIDS), 0, nil, 0)
         let count = Int(bufferCount) / MemoryLayout<pid_t>.size
         var pids = [pid_t](repeating: 0, count: count)
@@ -56,10 +56,25 @@ enum AppListSection {
             let p = String(cString: path)
             guard let r = p.range(of: ".app/") else { continue }
             let bundle = String(p[..<r.lowerBound]) + ".app"
-            let bytes = residentBytes(for: pid)
+            let bytes = memoryBytes(for: pid)
             groups[bundle, default: 0] += bytes
         }
         return groups
+    }
+
+    private static func memoryBytes(for pid: pid_t) -> UInt64 {
+        physicalFootprintBytes(for: pid) ?? residentBytes(for: pid)
+    }
+
+    private static func physicalFootprintBytes(for pid: pid_t) -> UInt64? {
+        var info = rusage_info_v2()
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { rebound in
+                proc_pid_rusage(pid, RUSAGE_INFO_V2, rebound)
+            }
+        }
+        guard result == 0 else { return nil }
+        return info.ri_phys_footprint
     }
 
     private static func residentBytes(for pid: pid_t) -> UInt64 {
