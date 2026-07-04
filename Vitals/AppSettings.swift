@@ -20,6 +20,7 @@ final class AppSettings {
 
     private let defaults = UserDefaults.standard
     private let enabledKey = "enabledDisplayItems"
+    private let excludedKey = "excludedBundleIDs"
 
     private init() {
         if defaults.array(forKey: enabledKey) == nil {
@@ -53,5 +54,29 @@ final class AppSettings {
             return
         }
         enabledDisplayItems = current
+    }
+
+    var excludedBundleIDs: Set<String> {
+        get {
+            Set(defaults.stringArray(forKey: excludedKey) ?? [])
+        }
+        set {
+            defaults.set(Array(newValue), forKey: excludedKey)
+            NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
+        }
+    }
+
+    func isExcluded(_ bundleID: String) -> Bool {
+        excludedBundleIDs.contains(bundleID)
+    }
+
+    func setExcluded(_ bundleID: String, _ excluded: Bool) {
+        var current = excludedBundleIDs
+        if excluded {
+            current.insert(bundleID)
+        } else {
+            current.remove(bundleID)
+        }
+        excludedBundleIDs = current
     }
 }

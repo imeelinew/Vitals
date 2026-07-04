@@ -19,7 +19,7 @@ struct RunningAppInfo {
 }
 
 enum AppListSection {
-    static func collect() -> [RunningAppInfo] {
+    static func collectAll() -> [RunningAppInfo] {
         let ownPid = ProcessInfo.processInfo.processIdentifier
         let grouped = groupedResidentBytes()
         var infos: [RunningAppInfo] = []
@@ -31,6 +31,14 @@ enum AppListSection {
         }
         infos.sort { $0.residentBytes > $1.residentBytes }
         return infos
+    }
+
+    static func collect() -> [RunningAppInfo] {
+        let excluded = AppSettings.shared.excludedBundleIDs
+        return collectAll().filter { info in
+            guard let bid = info.app.bundleIdentifier else { return true }
+            return !excluded.contains(bid)
+        }
     }
 
     private static func groupedResidentBytes() -> [String: UInt64] {
