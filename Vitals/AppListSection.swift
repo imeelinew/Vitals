@@ -33,14 +33,6 @@ enum AppListSection {
         return infos
     }
 
-    static func collect() -> [RunningAppInfo] {
-        let excluded = AppSettings.shared.excludedBundleIDs
-        return collectAll().filter { info in
-            guard let bid = info.app.bundleIdentifier else { return true }
-            return !excluded.contains(bid)
-        }
-    }
-
     private static func groupedMemoryBytes() -> [String: UInt64] {
         let bufferCount = proc_listpids(UInt32(PROC_ALL_PIDS), 0, nil, 0)
         let count = Int(bufferCount) / MemoryLayout<pid_t>.size
@@ -151,7 +143,7 @@ final class AppListView: NSView {
     func refresh() {
         clearRows()
 
-        let apps = AppListSection.collect()
+        let apps = AppListSection.collectAll()
 
         if apps.isEmpty {
             emptyLabel.isHidden = false
