@@ -3,25 +3,76 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let collector = MetricsCollector()
-    private var launchAtLoginItem: NSMenuItem!
     private var panel: StatusPanelView?
+    private var settingsController: SettingsWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "CPU --% · MEM --%"
 
-        collector.onTitleUpdate = { [weak self] cpu, mem in
-            self?.updateTitle(cpu: cpu, mem: mem)
-            self?.panel?.refresh()
+        collector.onUpdate = { [weak self] in
+            self?.refreshUI()
         }
         collector.start()
         buildMenu()
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(settingsChanged),
+            name: AppSettings.didChangeNotification,
+            object: nil
+        )
     }
 
-    private func updateTitle(cpu: Double, mem: Double) {
-        let cpuText = cpu >= 0 ? "\(Int(cpu.rounded()))%" : "--%"
-        let memText = "\(Int(mem.rounded()))%"
-        statusItem.button?.title = "CPU \(cpuText) · MEM \(memText)"
+    private func refreshUI() {
+        renderTitle()
+        panel?.refresh()
+    }
+
+    private func renderTitle() {
+        let enabled = AppSettings.shared.enabledDisplayItems
+        let cpu = collector.cpuUsage
+        let mem = collector.memoryUsage
+        let pressure = collector.pressure
+
+        let attr = NSMutableAttributedString()
+        let baseFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        let baseColor = NSColor.labelColor
+
+        func append(_ text: String, color: NSColor = baseColor) {
+            attr.append(NSAttributedString(string: text, attributes: [
+                .font: baseFont,
+                .foregroundColor: color
+            ]))
+        }
+
+        let order: [DisplayItem] = [.cpu, .memory, .pressure]
+        var first = true
+        for item in order where enabled.contains(item) {
+            if !first { append(" · ") }
+            first = false
+            switch item {
+            case .cpu:
+                let cpuText = collector.hasCPUSample ? "\(Int(cpu.rounded()))%" : "--%"
+                append("CPU \(cpuText)")
+            case .memory:
+                append("MEM \(Int(mem.rounded()))%")
+            case .pressure:
+                let color: NSColor
+                switch pressure {
+                case .normal: color = .systemGreen
+                case .warning: color = .systemYellow
+                case .critical: color = .systemRed
+                }
+                append("●", color: color)
+            }
+        }
+
+        if attr.length == 0 {
+            append("MenubarStatus")
+        }
+
+        statusItem.button?.attributedTitle = attr
     }
 
     private func buildMenu() {
@@ -36,10 +87,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        launchAtLoginItem = NSMenuItem(title: "开机启动", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
-        launchAtLoginItem.target = self
-        launchAtLoginItem.state = LaunchAtLogin.isEnabled ? .on : .off
-        menu.addItem(launchAtLoginItem)
+        let settingsItem = NSMenuItem(title: "设置…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
 
         let quitItem = NSMenuItem(title: "退出 MenubarStatus", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
@@ -48,19 +98,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    @objc private func toggleLaunchAtLogin() {
-        do {
-            if LaunchAtLogin.isEnabled {
-                try LaunchAtLogin.disable()
-                launchAtLoginItem.state = .off
-            } else {
-                try LaunchAtLogin.enable()
-                launchAtLoginItem.state = .on
-            }
-        } catch {
-            print("[launch] error: \(error)")
-            launchAtLoginItem.state = LaunchAtLogin.isEnabled ? .on : .off
+    @objc private func settingsChanged() {
+        renderTitle()
+    }
+
+    @objc private func openSettings() {
+        if settingsController == nil {
+            settingsController = SettingsWindowController()
         }
+        settingsController?.show()
     }
 
     @objc private func quit() {

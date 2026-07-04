@@ -9,7 +9,7 @@ final class MetricsCollector {
     var totalMemoryBytes: UInt64 = 0
     var pressure: MemoryPressureState = .normal
 
-    var onTitleUpdate: ((Double, Double) -> Void)?
+    var onUpdate: (() -> Void)?
 
     private let cpu = CPUMetrics()
     private let memory = MemoryMetrics()
@@ -22,7 +22,11 @@ final class MetricsCollector {
     func start() {
         totalMemoryBytes = memory.totalBytes
         pressureMonitor.start { [weak self] state in
-            self?.pressure = state
+            guard let self else { return }
+            self.pressure = state
+            DispatchQueue.main.async {
+                self.onUpdate?()
+            }
         }
 
         let t = DispatchSource.makeTimerSource(queue: queue)
@@ -60,7 +64,7 @@ final class MetricsCollector {
             }
             self.memoryUsage = mem.usagePercent
             self.memoryUsedBytes = mem.usedBytes
-            self.onTitleUpdate?(self.cpuUsage, self.memoryUsage)
+            self.onUpdate?()
         }
     }
 
