@@ -5,7 +5,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let collector = MetricsCollector()
     private var panel: StatusPanelView?
     private var appListView: AppListView?
+    private var launchAtLoginItem: NSMenuItem?
+    private var menuItemToggles: [MenuBarItem: NSMenuItem] = [:]
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        MenuBarPrefs.ensureDefaults()
+        ensureInitialLaunchAtLogin()
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "CPU --% · MEM --%"
 
@@ -14,26 +20,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         collector.start()
         buildMenu()
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(settingsChanged),
-            name: AppSettings.didChangeNotification,
-            object: nil
-        )
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(settingsWindowWillClose(_:)),
-            name: NSWindow.willCloseNotification,
-            object: nil
-        )
     }
 
-    @objc private func settingsWindowWillClose(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow,
-              window.title == "设置" else { return }
-        NSApp.setActivationPolicy(.accessory)
+    private func ensureInitialLaunchAtLogin() {
+        let key = "didInitialLaunchAtLoginSetup"
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: key) else { return }
+        try? LaunchAtLogin.enable()
+        defaults.set(true, forKey: key)
     }
 
     private func refreshUI() {
@@ -42,16 +36,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func renderTitle() {
-        guard AppSettings.shared.isMenuBarIconEnabled else {
-            statusItem.button?.title = ""
-            return
-        }
-
-        let enabled = AppSettings.shared.enabledDisplayItems
-        let cpu = collector.cpuUsage
-        let mem = collector.memoryUsage
-        let pressure = collector.pressure
-
         let attr = NSMutableAttributedString()
         let baseFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         let baseColor = NSColor.labelColor
@@ -63,20 +47,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ]))
         }
 
-        let order: [DisplayItem] = [.cpu, .memory, .pressure]
         var first = true
-        for item in order where enabled.contains(item) {
+        for item in MenuBarItem.allCases where MenuBarPrefs.isEnabled(item) {
             if !first { append(" · ") }
             first = false
             switch item {
             case .cpu:
-                let cpuText = collector.hasCPUSample ? "\(Int(cpu.rounded()))%" : "--%"
+                let cpuText = collector.hasCPUSample ? "\(Int(collector.cpuUsage.rounded()))%" : "--%"
                 append("CPU \(cpuText)")
             case .memory:
-                append("MEM \(Int(mem.rounded()))%")
+                append("MEM \(Int(collector.memoryUsage.rounded()))%")
             case .pressure:
                 let color: NSColor
-                switch pressure {
+                switch collector.pressure {
                 case .normal: color = .systemGreen
                 case .warning: color = .systemYellow
                 case .critical: color = .systemRed
@@ -87,10 +70,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if attr.length == 0 {
             statusItem.button?.title = ""
-            return
+        } else {
+            statusItem.button?.attributedTitle = attr
         }
-
-        statusItem.button?.attributedTitle = attr
     }
 
     private func buildMenu() {
@@ -113,9 +95,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let settingsItem = NSMenuItem(title: "设置…", action: #selector(openSettings), keyEquivalent: ",")
-        settingsItem.target = self
-        menu.addItem(settingsItem)
+        for item in MenuBarItem.allCases {
+            let mi = NSMenuItem(title: item.label, action: #selector(toggleItem(_:)), keyEquivalent: "")
+            mi.target = self
+            mi.state = MenuBarPrefs.isEnabled(item) ? .on : .off
+            mi.representedObject = item.rawValue
+            menu.addItem(mi)
+            menuItemToggles[item] = mi
+        }
+
+        menu.addItem(.separator())
+
+        let launchItem = NSMenuItem(title: "开机自启", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        launchItem.target = self
+        launchItem.state = LaunchAtLogin.isEnabled ? .on : .off
+        menu.addItem(launchItem)
+        self.launchAtLoginItem = launchItem
 
         let quitItem = NSMenuItem(title: "退出 Vitals", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
@@ -124,14 +119,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    @objc private func settingsChanged() {
+    @objc private func toggleItem(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let item = MenuBarItem(rawValue: raw) else { return }
+        let next = sender.state != .on
+        MenuBarPrefs.setEnabled(item, next)
+        sender.state = next ? .on : .off
         renderTitle()
     }
 
-    @objc private func openSettings() {
-        Task { @MainActor in
-            SettingsWindowOpener.show()
+    @objc private func toggleLaunchAtLogin() {
+        do {
+            if LaunchAtLogin.isEnabled {
+                try LaunchAtLogin.disable()
+            } else {
+                try LaunchAtLogin.enable()
+            }
+        } catch {
+            print("[launch] error: \(error)")
         }
+        launchAtLoginItem?.state = LaunchAtLogin.isEnabled ? .on : .off
     }
 
     @objc private func quit() {
@@ -143,6 +150,7 @@ extension AppDelegate: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         collector.sampleOnce()
         appListView?.refresh()
+        launchAtLoginItem?.state = LaunchAtLogin.isEnabled ? .on : .off
     }
 
     func menuDidClose(_ menu: NSMenu) {

@@ -1,49 +1,39 @@
 import AppKit
 
-final class PressureBarView: NSView {
-    var level: MemoryPressureState = .normal {
-        didSet {
-            if oldValue != level { needsDisplay = true }
-        }
+final class MetricBarView: NSView {
+    var percent: Double = 0 {
+        didSet { needsDisplay = true }
     }
-    private let segmentCount = 3
-    private let gap: CGFloat = 3
-    private let cornerRadius: CGFloat = 2
+    var fillColor: NSColor = .controlAccentColor {
+        didSet { needsDisplay = true }
+    }
+    private let cornerRadius: CGFloat = 3
 
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
         let bounds = self.bounds
-        let totalGap = gap * CGFloat(segmentCount - 1)
-        let segWidth = (bounds.width - totalGap) / CGFloat(segmentCount)
-        let currentLevel: Int = level == .normal ? 1 : level == .warning ? 2 : 3
+        let track = NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius)
+        NSColor.underPageBackgroundColor.setFill()
+        track.fill()
 
-        for i in 0..<segmentCount {
-            let x = bounds.minX + CGFloat(i) * (segWidth + gap)
-            let rect = NSRect(x: x, y: bounds.minY, width: segWidth, height: bounds.height)
-            let isActive = i < currentLevel
-            (isActive ? activeColor : NSColor.underPageBackgroundColor).setFill()
-            NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius).fill()
-        }
-    }
-
-    private var activeColor: NSColor {
-        switch level {
-        case .normal: return .systemGreen
-        case .warning: return .systemYellow
-        case .critical: return .systemRed
-        }
+        let clamped = max(0, min(100, percent))
+        let fillWidth = bounds.width * CGFloat(clamped / 100.0)
+        guard fillWidth > 0 else { return }
+        let fillRect = NSRect(x: bounds.minX, y: bounds.minY, width: fillWidth, height: bounds.height)
+        let fill = NSBezierPath(roundedRect: fillRect, xRadius: cornerRadius, yRadius: cornerRadius)
+        fillColor.setFill()
+        fill.fill()
     }
 }
 
 final class StatusPanelView: NSView {
     private weak var collector: MetricsCollector?
     private let cpuValue = NSTextField(labelWithString: "--")
-    private let cpuProgress = NSProgressIndicator()
+    private let cpuProgress = MetricBarView()
     private let memValue = NSTextField(labelWithString: "--")
-    private let memProgress = NSProgressIndicator()
-    private let pressureValue = NSTextField(labelWithString: "正常")
-    private let pressureBar = PressureBarView()
+    private let memProgress = MetricBarView()
+    private let pressureBar = MetricBarView()
 
     override var isFlipped: Bool { true }
 
@@ -70,8 +60,8 @@ final class StatusPanelView: NSView {
         addSubview(cpuValue)
         y += 18
 
-        configureProgress(cpuProgress)
         cpuProgress.frame = NSRect(x: x, y: y, width: contentWidth, height: 12)
+        cpuProgress.fillColor = .controlAccentColor
         addSubview(cpuProgress)
         y += 20
 
@@ -84,39 +74,35 @@ final class StatusPanelView: NSView {
         addSubview(memValue)
         y += 18
 
-        configureProgress(memProgress)
         memProgress.frame = NSRect(x: x, y: y, width: contentWidth, height: 12)
+        memProgress.fillColor = .controlAccentColor
         addSubview(memProgress)
         y += 20
 
         let pressureTitle = NSTextField(labelWithString: "内存压力")
         pressureTitle.frame = NSRect(x: x, y: y, width: 60, height: 14)
         addSubview(pressureTitle)
-        pressureValue.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        pressureValue.alignment = .right
-        pressureValue.frame = NSRect(x: x + contentWidth - 50, y: y, width: 50, height: 14)
-        addSubview(pressureValue)
         y += 18
 
         pressureBar.frame = NSRect(x: x, y: y, width: contentWidth, height: 12)
         addSubview(pressureBar)
     }
 
-    private func configureProgress(_ p: NSProgressIndicator) {
-        p.minValue = 0
-        p.maxValue = 100
-        p.isIndeterminate = false
-        p.style = .bar
-        p.controlSize = .small
-    }
-
     func refresh() {
         guard let c = collector else { return }
         cpuValue.stringValue = c.hasCPUSample ? "\(Int(c.cpuUsage.rounded()))%" : "--"
-        cpuProgress.doubleValue = max(0, c.cpuUsage)
+        cpuProgress.percent = max(0, c.cpuUsage)
         memValue.stringValue = "\(Int(c.memoryUsage.rounded()))%"
-        memProgress.doubleValue = c.memoryUsage
-        pressureValue.stringValue = c.pressure.label
-        pressureBar.level = c.pressure
+        memProgress.percent = c.memoryUsage
+        pressureBar.percent = c.pressurePercent
+        pressureBar.fillColor = pressureColor(c.pressure)
+    }
+
+    private func pressureColor(_ state: MemoryPressureState) -> NSColor {
+        switch state {
+        case .normal: return .systemGreen
+        case .warning: return .systemYellow
+        case .critical: return .systemRed
+        }
     }
 }
