@@ -69,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if attr.length == 0 {
-            append("MenubarStatus")
+            append("Vitals")
         }
 
         statusItem.button?.attributedTitle = attr
@@ -91,7 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsItem.target = self
         menu.addItem(settingsItem)
 
-        let quitItem = NSMenuItem(title: "退出 MenubarStatus", action: #selector(quit), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "退出 Vitals", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
 
