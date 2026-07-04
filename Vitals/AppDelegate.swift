@@ -5,8 +5,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let collector = MetricsCollector()
     private var panel: StatusPanelView?
     private var appListView: AppListView?
-    private var settingsController: SettingsWindowController?
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "CPU --% · MEM --%"
@@ -23,6 +21,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: AppSettings.didChangeNotification,
             object: nil
         )
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(settingsWindowWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: nil
+        )
+    }
+
+    @objc private func settingsWindowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              window.title == "设置" else { return }
+        NSApp.setActivationPolicy(.accessory)
     }
 
     private func refreshUI() {
@@ -31,6 +42,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func renderTitle() {
+        guard AppSettings.shared.isMenuBarIconEnabled else {
+            statusItem.button?.title = ""
+            return
+        }
+
         let enabled = AppSettings.shared.enabledDisplayItems
         let cpu = collector.cpuUsage
         let mem = collector.memoryUsage
@@ -70,7 +86,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if attr.length == 0 {
-            append("Vitals")
+            statusItem.button?.title = ""
+            return
         }
 
         statusItem.button?.attributedTitle = attr
@@ -113,10 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openSettings() {
         Task { @MainActor in
-            if settingsController == nil {
-                settingsController = SettingsWindowController()
-            }
-            settingsController?.show()
+            SettingsWindowOpener.show()
         }
     }
 

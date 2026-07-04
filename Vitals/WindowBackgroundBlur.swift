@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-@available(macOS 26.0, *)
+/// Bridge NSVisualEffectView into SwiftUI as a window-level frosted background.
 struct WindowBackgroundBlur: NSViewRepresentable {
     var materialAlpha: Double
     var material: NSVisualEffectView.Material = .hudWindow
@@ -21,7 +21,6 @@ struct WindowBackgroundBlur: NSViewRepresentable {
     }
 }
 
-@available(macOS 26.0, *)
 struct WindowTransparencyConfigurator: NSViewRepresentable {
     var enabled: Bool
 

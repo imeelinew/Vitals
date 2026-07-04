@@ -19,6 +19,7 @@ final class AppSettings {
     static let didChangeNotification = Notification.Name("AppSettings.didChange")
 
     private let defaults = UserDefaults.standard
+    private let menuBarIconEnabledKey = "menuBarIconEnabled"
     private let enabledKey = "enabledDisplayItems"
     private let excludedKey = "excludedBundleIDs"
 
@@ -26,34 +27,53 @@ final class AppSettings {
         if defaults.array(forKey: enabledKey) == nil {
             defaults.set([DisplayItem.cpu.rawValue, DisplayItem.memory.rawValue], forKey: enabledKey)
         }
+        if defaults.object(forKey: menuBarIconEnabledKey) == nil {
+            defaults.set(true, forKey: menuBarIconEnabledKey)
+        }
+    }
+
+    var isMenuBarIconEnabled: Bool {
+        get { defaults.bool(forKey: menuBarIconEnabledKey) }
+        set {
+            defaults.set(newValue, forKey: menuBarIconEnabledKey)
+            if newValue, enabledDisplayItems.isEmpty {
+                enabledDisplayItems = [.cpu, .memory]
+            } else {
+                notifyChange()
+            }
+        }
     }
 
     var enabledDisplayItems: Set<DisplayItem> {
         get {
             let raw = defaults.stringArray(forKey: enabledKey) ?? []
-            let items = Set(raw.compactMap { DisplayItem(rawValue: $0) })
-            return items.isEmpty ? [.cpu, .memory] : items
+            return Set(raw.compactMap { DisplayItem(rawValue: $0) })
         }
         set {
             defaults.set(Array(newValue.map { $0.rawValue }), forKey: enabledKey)
-            NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
+            notifyChange()
         }
     }
 
     func isEnabled(_ item: DisplayItem) -> Bool {
-        enabledDisplayItems.contains(item)
+        isMenuBarIconEnabled && enabledDisplayItems.contains(item)
     }
 
     func setEnabled(_ item: DisplayItem, _ enabled: Bool) {
         var current = enabledDisplayItems
         if enabled {
             current.insert(item)
-        } else if current.count > 1 {
-            current.remove(item)
         } else {
-            return
+            current.remove(item)
         }
         enabledDisplayItems = current
+
+        if current.isEmpty {
+            isMenuBarIconEnabled = false
+        } else if !isMenuBarIconEnabled {
+            defaults.set(true, forKey: menuBarIconEnabledKey)
+            notifyChange()
+        }
     }
 
     var excludedBundleIDs: Set<String> {
@@ -62,7 +82,7 @@ final class AppSettings {
         }
         set {
             defaults.set(Array(newValue), forKey: excludedKey)
-            NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
+            notifyChange()
         }
     }
 
@@ -78,5 +98,9 @@ final class AppSettings {
             current.remove(bundleID)
         }
         excludedBundleIDs = current
+    }
+
+    private func notifyChange() {
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 }

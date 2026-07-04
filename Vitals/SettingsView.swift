@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var settingsPage: SettingsPage = .menubar
     @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
     @State private var runningApps: [RunningAppInfo] = []
+    @State private var menuBarIconEnabled = AppSettings.shared.isMenuBarIconEnabled
 
     private let sidebarIconTheme: SidebarIconTheme = .professional
     private let sidebarIconStyle: SidebarIconStyle = .lucide
@@ -47,7 +48,7 @@ struct SettingsView: View {
 
         var symbolName: String {
             switch self {
-            case .menubar: return "menubar.rectangle"
+            case .menubar: return "gauge.with.needle"
             case .apps: return "square.grid.2x2.fill"
             case .general: return "gearshape.fill"
             }
@@ -55,8 +56,8 @@ struct SettingsView: View {
 
         var professionalIconResourceName: String {
             switch self {
-            case .menubar: return "app-window"
-            case .apps: return "folder-bookmark"
+            case .menubar: return "gauge"
+            case .apps: return "layout-grid"
             case .general: return "settings"
             }
         }
@@ -71,10 +72,12 @@ struct SettingsView: View {
         .toolbar {
             ToolbarSpacer(.flexible)
         }
-        .toolbarBackgroundVisibility(.automatic, for: .windowToolbar)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .background {
-            WindowTransparencyConfigurator(enabled: false)
+            WindowTransparencyConfigurator(enabled: true)
                 .frame(width: 0, height: 0)
+            WindowBackgroundBlur(materialAlpha: 1.0)
+                .ignoresSafeArea()
         }
     }
 
@@ -122,38 +125,17 @@ struct SettingsView: View {
     private var menubarPage: some View {
         Form {
             Section {
-                Toggle(isOn: displayBinding(.cpu)) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("CPU")
-                        Text(DisplayItem.cpu.label)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                Toggle("菜单栏图标", isOn: menuBarIconBinding)
 
-                Toggle(isOn: displayBinding(.memory)) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("内存")
-                        Text(DisplayItem.memory.label)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
+                if menuBarIconEnabled {
+                    Toggle(DisplayItem.cpu.label, isOn: displayBinding(.cpu))
+                    Toggle(DisplayItem.memory.label, isOn: displayBinding(.memory))
+                    Toggle(DisplayItem.pressure.label, isOn: displayBinding(.pressure))
                 }
-
-                Toggle(isOn: displayBinding(.pressure)) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("压力")
-                        Text(DisplayItem.pressure.label)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            } footer: {
-                Text("至少保留一项显示在菜单栏")
             }
         }
         .formStyle(.grouped)
-        .scrollContentBackground(.automatic)
+        .scrollContentBackground(.hidden)
         .settingsContentMargins()
         .navigationTitle("菜单栏")
     }
@@ -173,13 +155,11 @@ struct SettingsView: View {
                             Text(info.displayName)
                         }
                     }
-                } footer: {
-                    Text("隐藏不想在菜单栏应用列表中看到的应用")
                 }
             }
         }
         .formStyle(.grouped)
-        .scrollContentBackground(.automatic)
+        .scrollContentBackground(.hidden)
         .settingsContentMargins()
         .navigationTitle("应用")
         .onAppear(perform: refreshRunningApps)
@@ -193,21 +173,14 @@ struct SettingsView: View {
     private var generalPage: some View {
         Form {
             Section {
-                Toggle(isOn: $launchAtLoginEnabled) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("开机启动")
-                        Text("登录时自动启动 Vitals")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                Toggle("在登录时启动 Vitals", isOn: $launchAtLoginEnabled)
+                    .onChange(of: launchAtLoginEnabled) { _, enabled in
+                        updateLaunchAtLogin(enabled)
                     }
-                }
-                .onChange(of: launchAtLoginEnabled) { _, enabled in
-                    updateLaunchAtLogin(enabled)
-                }
             }
         }
         .formStyle(.grouped)
-        .scrollContentBackground(.automatic)
+        .scrollContentBackground(.hidden)
         .settingsContentMargins()
         .navigationTitle("通用")
         .onAppear {
@@ -215,10 +188,23 @@ struct SettingsView: View {
         }
     }
 
+    private var menuBarIconBinding: Binding<Bool> {
+        Binding(
+            get: { menuBarIconEnabled },
+            set: { enabled in
+                menuBarIconEnabled = enabled
+                AppSettings.shared.isMenuBarIconEnabled = enabled
+            }
+        )
+    }
+
     private func displayBinding(_ item: DisplayItem) -> Binding<Bool> {
         Binding(
-            get: { AppSettings.shared.isEnabled(item) },
-            set: { AppSettings.shared.setEnabled(item, $0) }
+            get: { AppSettings.shared.enabledDisplayItems.contains(item) },
+            set: { enabled in
+                AppSettings.shared.setEnabled(item, enabled)
+                menuBarIconEnabled = AppSettings.shared.isMenuBarIconEnabled
+            }
         )
     }
 
