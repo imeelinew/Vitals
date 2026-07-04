@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let collector = MetricsCollector()
     private var panel: StatusPanelView?
     private var settingsController: SettingsWindowController?
+    private var appListMenu: NSMenu?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -87,6 +88,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
+        let appListTitle = NSMenuItem(title: "运行中的应用", action: nil, keyEquivalent: "")
+        let subMenu = NSMenu()
+        appListTitle.submenu = subMenu
+        menu.addItem(appListTitle)
+        self.appListMenu = subMenu
+
+        menu.addItem(.separator())
+
         let settingsItem = NSMenuItem(title: "设置…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
@@ -112,10 +121,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func quit() {
         NSApp.terminate(nil)
     }
+
+    @objc private func toggleAppSelection(_ sender: NSMenuItem) {
+        sender.state = (sender.state == .on) ? .off : .on
+    }
+
+    @objc private func quitSelectedApps(_ sender: NSMenuItem) {
+        guard let subMenu = appListMenu else { return }
+        let selected: [NSRunningApplication] = subMenu.items.compactMap { item in
+            guard item.state == .on, let app = item.representedObject as? NSRunningApplication else { return nil }
+            return app
+        }
+        AppListSection.terminateSelected(selected)
+    }
 }
 
 extension AppDelegate: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         collector.sampleOnce()
+        rebuildAppList()
+    }
+
+    private func rebuildAppList() {
+        guard let subMenu = appListMenu else { return }
+        subMenu.removeAllItems()
+        for item in AppListSection.buildMenuItems(
+            target: self,
+            toggleAction: #selector(toggleAppSelection),
+            quitAction: #selector(quitSelectedApps)
+        ) {
+            subMenu.addItem(item)
+        }
     }
 }
