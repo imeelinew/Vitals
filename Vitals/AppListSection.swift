@@ -40,12 +40,12 @@ enum AppListSection {
         let actual = proc_listpids(UInt32(PROC_ALL_PIDS), 0, &pids, bufferCount)
         let actualCount = Int(actual) / MemoryLayout<pid_t>.size
 
+        var pathBuffer = [CChar](repeating: 0, count: 4096)
         var groups: [String: UInt64] = [:]
         for pid in pids.prefix(actualCount) {
-            var path = [CChar](repeating: 0, count: 4096)
-            let len = proc_pidpath(pid, &path, 4096)
+            let len = proc_pidpath(pid, &pathBuffer, 4096)
             guard len > 0 else { continue }
-            let p = String(cString: path)
+            let p = String(cString: pathBuffer)
             guard let r = p.range(of: ".app/") else { continue }
             let bundle = String(p[..<r.lowerBound]) + ".app"
             let bytes = memoryBytes(for: pid)

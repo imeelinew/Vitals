@@ -1,12 +1,8 @@
 import Foundation
-import Observation
 
-@Observable
 final class MetricsCollector {
     var cpuUsage: Double = -1
     var memoryUsage: Double = 0
-    var memoryUsedBytes: UInt64 = 0
-    var totalMemoryBytes: UInt64 = 0
     var pressure: MemoryPressureState = .normal
     var pressurePercent: Double = 0
 
@@ -21,7 +17,6 @@ final class MetricsCollector {
     var hasCPUSample: Bool { cpuUsage >= 0 }
 
     func start() {
-        totalMemoryBytes = memory.totalBytes
         pressureMonitor.start { [weak self] state in
             guard let self else { return }
             self.pressure = state
@@ -47,7 +42,7 @@ final class MetricsCollector {
 
     private func tick() {
         let cpuVal = cpu.sample()
-        let mem = memory.sample()
+        let memPercent = memory.sample()
         let reconciledPressure = pressureMonitor.currentLevel()
         let pressureLevel = Self.readPressureLevel()
         DispatchQueue.main.async { [weak self] in
@@ -55,8 +50,7 @@ final class MetricsCollector {
             if !cpuVal.isNaN {
                 self.cpuUsage = cpuVal
             }
-            self.memoryUsage = mem.usagePercent
-            self.memoryUsedBytes = mem.usedBytes
+            self.memoryUsage = memPercent
             if reconciledPressure != self.pressure {
                 self.pressure = reconciledPressure
             }
