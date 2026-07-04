@@ -21,14 +21,37 @@ struct RunningAppInfo {
 enum AppListSection {
     static func collect() -> [RunningAppInfo] {
         let ownPid = ProcessInfo.processInfo.processIdentifier
+        let grouped = groupedResidentBytes()
         var infos: [RunningAppInfo] = []
         for app in NSWorkspace.shared.runningApplications {
             guard app.activationPolicy == .regular, app.processIdentifier != ownPid else { continue }
-            let bytes = residentBytes(for: app.processIdentifier)
+            let bundlePath = app.bundleURL?.path ?? ""
+            let bytes = grouped[bundlePath] ?? residentBytes(for: app.processIdentifier)
             infos.append(RunningAppInfo(app: app, residentBytes: bytes))
         }
         infos.sort { $0.residentBytes > $1.residentBytes }
         return infos
+    }
+
+    private static func groupedResidentBytes() -> [String: UInt64] {
+        let bufferCount = proc_listpids(UInt32(PROC_ALL_PIDS), 0, nil, 0)
+        let count = Int(bufferCount) / MemoryLayout<pid_t>.size
+        var pids = [pid_t](repeating: 0, count: count)
+        let actual = proc_listpids(UInt32(PROC_ALL_PIDS), 0, &pids, bufferCount)
+        let actualCount = Int(actual) / MemoryLayout<pid_t>.size
+
+        var groups: [String: UInt64] = [:]
+        for pid in pids.prefix(actualCount) {
+            var path = [CChar](repeating: 0, count: 4096)
+            let len = proc_pidpath(pid, &path, 4096)
+            guard len > 0 else { continue }
+            let p = String(cString: path)
+            guard let r = p.range(of: ".app/") else { continue }
+            let bundle = String(p[..<r.lowerBound]) + ".app"
+            let bytes = residentBytes(for: pid)
+            groups[bundle, default: 0] += bytes
+        }
+        return groups
     }
 
     private static func residentBytes(for pid: pid_t) -> UInt64 {
