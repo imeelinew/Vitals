@@ -22,12 +22,7 @@ final class MemoryPressureMonitor {
 
     func start(onChange: @escaping (MemoryPressureState) -> Void) {
         self.handler = onChange
-
-        var level: Int32 = 0
-        var size = MemoryLayout<Int32>.size
-        sysctlbyname("kern.memorystatus_vm_pressure_level", &level, &size, nil, 0)
-        let initial = MemoryPressureState(rawValue: Int(level)) ?? .normal
-        onChange(initial)
+        onChange(currentLevel())
 
         let src = DispatchSource.makeMemoryPressureSource(
             eventMask: [.warning, .critical, .normal],
@@ -47,6 +42,13 @@ final class MemoryPressureMonitor {
         }
         src.resume()
         self.source = src
+    }
+
+    func currentLevel() -> MemoryPressureState {
+        var level: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        sysctlbyname("kern.memorystatus_vm_pressure_level", &level, &size, nil, 0)
+        return MemoryPressureState(rawValue: Int(level)) ?? .normal
     }
 
     deinit {

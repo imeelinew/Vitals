@@ -47,16 +47,7 @@ final class MetricsCollector {
     private func tick() {
         let cpuVal = cpu.sample()
         let mem = memory.sample()
-        #if DEBUG
-        let usedGB = Double(mem.usedBytes) / 1_073_741_824
-        let totalGB = Double(mem.totalBytes) / 1_073_741_824
-        if cpuVal.isNaN {
-            print("[metrics] CPU=--  MEM=\(String(format: "%.1f", mem.usagePercent))% (\(String(format: "%.2f", usedGB))/\(String(format: "%.1f", totalGB)) GB) pressure=\(pressure.label)")
-        } else {
-            print("[metrics] CPU=\(String(format: "%.1f", cpuVal))%  MEM=\(String(format: "%.1f", mem.usagePercent))% (\(String(format: "%.2f", usedGB))/\(String(format: "%.1f", totalGB)) GB) pressure=\(pressure.label)")
-        }
-        fflush(stdout)
-        #endif
+        let reconciledPressure = pressureMonitor.currentLevel()
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             if !cpuVal.isNaN {
@@ -64,6 +55,9 @@ final class MetricsCollector {
             }
             self.memoryUsage = mem.usagePercent
             self.memoryUsedBytes = mem.usedBytes
+            if reconciledPressure != self.pressure {
+                self.pressure = reconciledPressure
+            }
             self.onUpdate?()
         }
     }
