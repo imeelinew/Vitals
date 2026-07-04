@@ -6,14 +6,6 @@ enum MemoryPressureState: Int {
     case normal = 1
     case warning = 2
     case critical = 4
-
-    var label: String {
-        switch self {
-        case .normal: return "正常"
-        case .warning: return "警告"
-        case .critical: return "严重"
-        }
-    }
 }
 
 final class MemoryPressureMonitor {

@@ -1,14 +1,6 @@
 import Foundation
 import Darwin
 
-struct MemoryInfo {
-    let usedBytes: UInt64
-    let totalBytes: UInt64
-    var usagePercent: Double {
-        totalBytes > 0 ? Double(usedBytes) / Double(totalBytes) * 100 : 0
-    }
-}
-
 final class MemoryMetrics {
     let totalBytes: UInt64
     private let pageSize: vm_size_t
@@ -21,7 +13,7 @@ final class MemoryMetrics {
         self.totalBytes = size
     }
 
-    func sample() -> MemoryInfo {
+    func sample() -> Double {
         var info = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
         let host = mach_host_self()
@@ -31,9 +23,7 @@ final class MemoryMetrics {
                 host_statistics64(host, HOST_VM_INFO64, intPtr, &count)
             }
         }
-        guard kr == KERN_SUCCESS else {
-            return MemoryInfo(usedBytes: 0, totalBytes: totalBytes)
-        }
+        guard kr == KERN_SUCCESS, totalBytes > 0 else { return 0 }
 
         let ps = UInt64(pageSize)
         let internalPages = UInt64(info.internal_page_count)
@@ -44,6 +34,6 @@ final class MemoryMetrics {
         let compressed = UInt64(info.compressor_page_count) * ps
         let used = appMemory + wired + compressed
 
-        return MemoryInfo(usedBytes: used, totalBytes: totalBytes)
+        return Double(used) / Double(totalBytes) * 100
     }
 }

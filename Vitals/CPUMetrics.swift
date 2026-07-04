@@ -3,7 +3,6 @@ import Darwin
 
 final class CPUMetrics {
     private var previousTicks: [Int32]?
-    private var previousNumCPU: Int = 0
 
     func sample() -> Double {
         var numCPU: natural_t = 0
@@ -34,7 +33,6 @@ final class CPUMetrics {
 
         guard let prev = previousTicks, prev.count == current.count else {
             previousTicks = current
-            previousNumCPU = n
             return .nan
         }
 
@@ -52,7 +50,6 @@ final class CPUMetrics {
         }
 
         previousTicks = current
-        previousNumCPU = n
 
         let total = userDelta + systemDelta + niceDelta + idleDelta
         guard total > 0 else { return 0 }
