@@ -112,10 +112,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openSettings() {
-        if settingsController == nil {
-            settingsController = SettingsWindowController()
+        Task { @MainActor in
+            if settingsController == nil {
+                settingsController = SettingsWindowController()
+            }
+            settingsController?.show()
         }
-        settingsController?.show()
     }
 
     @objc private func quit() {
