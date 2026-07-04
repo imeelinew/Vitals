@@ -4,8 +4,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let collector = MetricsCollector()
     private var panel: StatusPanelView?
+    private var appListView: AppListView?
     private var settingsController: SettingsWindowController?
-    private var appListMenu: NSMenu?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -88,11 +88,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let appListTitle = NSMenuItem(title: "运行中的应用", action: nil, keyEquivalent: "")
-        let subMenu = NSMenu()
-        appListTitle.submenu = subMenu
-        menu.addItem(appListTitle)
-        self.appListMenu = subMenu
+        let appListItem = NSMenuItem()
+        let alv = AppListView()
+        appListItem.view = alv
+        self.appListView = alv
+        menu.addItem(appListItem)
 
         menu.addItem(.separator())
 
@@ -121,36 +121,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func quit() {
         NSApp.terminate(nil)
     }
-
-    @objc private func toggleAppSelection(_ sender: NSMenuItem) {
-        sender.state = (sender.state == .on) ? .off : .on
-    }
-
-    @objc private func quitSelectedApps(_ sender: NSMenuItem) {
-        guard let subMenu = appListMenu else { return }
-        let selected: [NSRunningApplication] = subMenu.items.compactMap { item in
-            guard item.state == .on, let app = item.representedObject as? NSRunningApplication else { return nil }
-            return app
-        }
-        AppListSection.terminateSelected(selected)
-    }
 }
 
 extension AppDelegate: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         collector.sampleOnce()
-        rebuildAppList()
+        appListView?.refresh()
     }
 
-    private func rebuildAppList() {
-        guard let subMenu = appListMenu else { return }
-        subMenu.removeAllItems()
-        for item in AppListSection.buildMenuItems(
-            target: self,
-            toggleAction: #selector(toggleAppSelection),
-            quitAction: #selector(quitSelectedApps)
-        ) {
-            subMenu.addItem(item)
-        }
+    func menuDidClose(_ menu: NSMenu) {
+        appListView?.clearRows()
     }
 }
