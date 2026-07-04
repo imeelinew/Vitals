@@ -15,7 +15,7 @@ final class MetricsCollector {
     private let memory = MemoryMetrics()
     private let pressureMonitor = MemoryPressureMonitor()
     private var timer: DispatchSourceTimer?
-    private let queue = DispatchQueue(label: "com.eli.MenubarStatus.collector", qos: .utility)
+    private let queue = DispatchQueue(label: "com.eli.Vitals.collector", qos: .utility)
 
     var hasCPUSample: Bool { cpuUsage >= 0 }
 

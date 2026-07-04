@@ -6,7 +6,7 @@
 	objectVersion = 56;
 	objects = {
 /* Begin PBXBuildFile section */
-		1A2000000000000000000001 /* MenubarStatusApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1000000000000000000001 /* MenubarStatusApp.swift */; };
+		1A2000000000000000000001 /* VitalsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1000000000000000000001 /* VitalsApp.swift */; };
 		1A2000000000000000000002 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1000000000000000000002 /* AppDelegate.swift */; };
 		1A2000000000000000000003 /* MetricsCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1000000000000000000003 /* MetricsCollector.swift */; };
 		1A2000000000000000000004 /* CPUMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1000000000000000000004 /* CPUMetrics.swift */; };
@@ -20,10 +20,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		1A0300000000000000000001 /* MenubarStatus.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MenubarStatus.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A0300000000000000000001 /* Vitals.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Vitals.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A0300000000000000000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		1A0300000000000000000003 /* MenubarStatus.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MenubarStatus.entitlements; sourceTree = "<group>"; };
-		1A1000000000000000000001 /* MenubarStatusApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenubarStatusApp.swift; sourceTree = "<group>"; };
+		1A0300000000000000000003 /* Vitals.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Vitals.entitlements; sourceTree = "<group>"; };
+		1A1000000000000000000001 /* VitalsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VitalsApp.swift; sourceTree = "<group>"; };
 		1A1000000000000000000002 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		1A1000000000000000000003 /* MetricsCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsCollector.swift; sourceTree = "<group>"; };
 		1A1000000000000000000004 /* CPUMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CPUMetrics.swift; sourceTree = "<group>"; };
@@ -50,7 +50,7 @@
 		1A0100000000000000000002 = {
 			isa = PBXGroup;
 			children = (
-				1A0100000000000000000003 /* MenubarStatus */,
+				1A0100000000000000000003 /* Vitals */,
 				1A0100000000000000000004 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -58,15 +58,15 @@
 		1A0100000000000000000004 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				1A0300000000000000000001 /* MenubarStatus.app */,
+				1A0300000000000000000001 /* Vitals.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		1A0100000000000000000003 /* MenubarStatus */ = {
+		1A0100000000000000000003 /* Vitals */ = {
 			isa = PBXGroup;
 			children = (
-				1A1000000000000000000001 /* MenubarStatusApp.swift */,
+				1A1000000000000000000001 /* VitalsApp.swift */,
 				1A1000000000000000000002 /* AppDelegate.swift */,
 				1A1000000000000000000003 /* MetricsCollector.swift */,
 				1A1000000000000000000004 /* CPUMetrics.swift */,
@@ -78,17 +78,17 @@
 				1A100000000000000000000A /* AppSettings.swift */,
 				1A100000000000000000000B /* SettingsWindow.swift */,
 				1A0300000000000000000002 /* Info.plist */,
-				1A0300000000000000000003 /* MenubarStatus.entitlements */,
+				1A0300000000000000000003 /* Vitals.entitlements */,
 			);
-			path = MenubarStatus;
+			path = Vitals;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		1A0200000000000000000001 /* MenubarStatus */ = {
+		1A0200000000000000000001 /* Vitals */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 1A4000000000000000000004 /* Build configuration list for PBXNativeTarget "MenubarStatus" */;
+			buildConfigurationList = 1A4000000000000000000004 /* Build configuration list for PBXNativeTarget "Vitals" */;
 			buildPhases = (
 				1A3000000000000000000001 /* Sources */,
 				1A3000000000000000000002 /* Frameworks */,
@@ -98,9 +98,9 @@
 			);
 			dependencies = (
 			);
-			name = MenubarStatus;
-			productName = MenubarStatus;
-			productReference = 1A0300000000000000000001 /* MenubarStatus.app */;
+			name = Vitals;
+			productName = Vitals;
+			productReference = 1A0300000000000000000001 /* Vitals.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -119,7 +119,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 1A4000000000000000000001 /* Build configuration list for PBXProject "MenubarStatus" */;
+			buildConfigurationList = 1A4000000000000000000001 /* Build configuration list for PBXProject "Vitals" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -132,7 +132,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				1A0200000000000000000001 /* MenubarStatus */,
+				1A0200000000000000000001 /* Vitals */,
 			);
 		};
 /* End PBXProject section */
@@ -153,7 +153,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				1A2000000000000000000001 /* MenubarStatusApp.swift in Sources */,
+				1A2000000000000000000001 /* VitalsApp.swift in Sources */,
 				1A2000000000000000000002 /* AppDelegate.swift in Sources */,
 				1A2000000000000000000003 /* MetricsCollector.swift in Sources */,
 				1A2000000000000000000004 /* CPUMetrics.swift in Sources */,
@@ -291,7 +291,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = MenubarStatus/MenubarStatus.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Vitals/Vitals.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -299,13 +299,13 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = MenubarStatus/Info.plist;
+				INFOPLIST_FILE = Vitals/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.eli.MenubarStatus";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.eli.Vitals";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = minimal;
@@ -317,7 +317,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = MenubarStatus/MenubarStatus.entitlements;
+				CODE_SIGN_ENTITLEMENTS = Vitals/Vitals.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -325,13 +325,13 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = MenubarStatus/Info.plist;
+				INFOPLIST_FILE = Vitals/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.eli.MenubarStatus";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.eli.Vitals";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = minimal;
@@ -342,7 +342,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		1A4000000000000000000001 /* Build configuration list for PBXProject "MenubarStatus" */ = {
+		1A4000000000000000000001 /* Build configuration list for PBXProject "Vitals" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1A4000000000000000000002 /* Debug */,
@@ -351,7 +351,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		1A4000000000000000000004 /* Build configuration list for PBXNativeTarget "MenubarStatus" */ = {
+		1A4000000000000000000004 /* Build configuration list for PBXNativeTarget "Vitals" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				1A4000000000000000000005 /* Debug */,

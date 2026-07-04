@@ -13,7 +13,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "MenubarStatus 设置"
+        window.title = "Vitals 设置"
         window.isReleasedWhenClosed = false
         window.isRestorable = false
         super.init(window: window)
