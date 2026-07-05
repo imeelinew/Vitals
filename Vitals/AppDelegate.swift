@@ -6,7 +6,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: StatusPanelView?
     private var appListView: AppListView?
     private var launchAtLoginItem: NSMenuItem?
-    private var menuItemToggles: [MenuBarItem: NSMenuItem] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         MenuBarPrefs.ensureDefaults()
@@ -58,13 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .memory:
                 append("MEM \(Int(collector.memoryUsage.rounded()))%")
             case .pressure:
-                let color: NSColor
-                switch collector.pressure {
-                case .normal: color = .systemGreen
-                case .warning: color = .systemYellow
-                case .critical: color = .systemRed
-                }
-                append("●", color: color)
+                append("●", color: collector.pressure.color)
             }
         }
 
@@ -101,7 +94,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             mi.state = MenuBarPrefs.isEnabled(item) ? .on : .off
             mi.representedObject = item.rawValue
             menu.addItem(mi)
-            menuItemToggles[item] = mi
         }
 
         menu.addItem(.separator())

@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Dispatch
 import Darwin
 
@@ -6,6 +6,14 @@ enum MemoryPressureState: Int {
     case normal = 1
     case warning = 2
     case critical = 4
+
+    var color: NSColor {
+        switch self {
+        case .normal: return .systemGreen
+        case .warning: return .systemYellow
+        case .critical: return .systemRed
+        }
+    }
 }
 
 final class MemoryPressureMonitor {

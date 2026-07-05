@@ -77,14 +77,6 @@ final class StatusPanelView: NSView {
         cpuProgress.doubleValue = max(0, c.cpuUsage)
         memValue.stringValue = "\(Int(c.memoryUsage.rounded()))%"
         memProgress.doubleValue = c.memoryUsage
-        pressureDot.contentTintColor = pressureColor(c.pressure)
-    }
-
-    private func pressureColor(_ state: MemoryPressureState) -> NSColor {
-        switch state {
-        case .normal: return .systemGreen
-        case .warning: return .systemYellow
-        case .critical: return .systemRed
-        }
+        pressureDot.contentTintColor = c.pressure.color
     }
 }
