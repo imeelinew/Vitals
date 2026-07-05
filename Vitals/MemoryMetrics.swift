@@ -4,6 +4,7 @@ import Darwin
 final class MemoryMetrics {
     let totalBytes: UInt64
     private let pageSize: vm_size_t
+    private let host: host_t = mach_host_self()
 
     init() {
         self.pageSize = vm_kernel_page_size
@@ -16,7 +17,6 @@ final class MemoryMetrics {
     func sample() -> Double {
         var info = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
-        let host = mach_host_self()
 
         let kr = withUnsafeMutablePointer(to: &info) { ptr -> kern_return_t in
             ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in

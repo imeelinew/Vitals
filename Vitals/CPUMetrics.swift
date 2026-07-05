@@ -3,12 +3,12 @@ import Darwin
 
 final class CPUMetrics {
     private var previousTicks: [Int32]?
+    private let host: host_t = mach_host_self()
 
     func sample() -> Double {
         var numCPU: natural_t = 0
         var cpuInfo: UnsafeMutablePointer<integer_t>? = nil
         var cpuInfoCount: mach_msg_type_number_t = 0
-        let host = mach_host_self()
 
         let kr = host_processor_info(
             host,
@@ -20,7 +20,7 @@ final class CPUMetrics {
         guard kr == KERN_SUCCESS, let info = cpuInfo else { return .nan }
         defer {
             let size = vm_size_t(cpuInfoCount) * vm_size_t(MemoryLayout<integer_t>.stride)
-            vm_deallocate(mach_host_self(), vm_address_t(UInt(bitPattern: info)), size)
+            vm_deallocate(host, vm_address_t(UInt(bitPattern: info)), size)
         }
 
         let states = Int(CPU_STATE_MAX)
