@@ -6,6 +6,8 @@ final class PressureProgressIndicator: NSProgressIndicator {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
         let fillColor: NSColor
         switch pressureState {
         case .normal: fillColor = .systemGreen
@@ -13,18 +15,17 @@ final class PressureProgressIndicator: NSProgressIndicator {
         case .critical: fillColor = .systemRed
         }
 
-        let bounds = self.bounds
-        let radius: CGFloat = 3.5
-
-        NSColor.underPageBackgroundColor.setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
-
         let clamped = max(0, min(100, doubleValue))
         let fillWidth = bounds.width * CGFloat(clamped / 100.0)
         guard fillWidth > 0 else { return }
+
         let fillRect = NSRect(x: bounds.minX, y: bounds.minY, width: fillWidth, height: bounds.height)
+
+        NSGraphicsContext.current?.saveGraphicsState()
+        NSGraphicsContext.current?.compositingOperation = .sourceAtop
         fillColor.setFill()
-        NSBezierPath(roundedRect: fillRect, xRadius: radius, yRadius: radius).fill()
+        NSBezierPath(rect: fillRect).fill()
+        NSGraphicsContext.current?.restoreGraphicsState()
     }
 }
 
