@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let titleAttr = NSMutableAttributedString()
     private let titleFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+    private var lastTitleKey: String = ""
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         MenuBarPrefs.ensureDefaults()
@@ -40,6 +41,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func renderTitle() {
+        let cpuText = collector.hasCPUSample ? "\(Int(collector.cpuUsage.rounded()))%" : "--%"
+        let memText = "\(Int(collector.memoryUsage.rounded()))%"
+        let pressureKey = collector.pressure.rawValue
+
+        let key = "cpu=\(cpuText)|mem=\(memText)|p=\(pressureKey)|enabled=\(MenuBarPrefs.isEnabled(.cpu))\(MenuBarPrefs.isEnabled(.memory))\(MenuBarPrefs.isEnabled(.pressure))"
+        if key == lastTitleKey { return }
+        lastTitleKey = key
+
         titleAttr.beginEditing()
         titleAttr.deleteCharacters(in: NSRange(location: 0, length: titleAttr.length))
 
@@ -49,10 +58,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             first = false
             switch item {
             case .cpu:
-                let cpuText = collector.hasCPUSample ? "\(Int(collector.cpuUsage.rounded()))%" : "--%"
                 appendTitle("CPU \(cpuText)")
             case .memory:
-                appendTitle("MEM \(Int(collector.memoryUsage.rounded()))%")
+                appendTitle("MEM \(memText)")
             case .pressure:
                 appendTitle("●", color: collector.pressure.color)
             }
@@ -119,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let next = sender.state != .on
         MenuBarPrefs.setEnabled(item, next)
         sender.state = next ? .on : .off
+        lastTitleKey = ""
         renderTitle()
     }
 
