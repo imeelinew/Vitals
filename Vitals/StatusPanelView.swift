@@ -1,39 +1,40 @@
 import AppKit
 
-final class MetricBarView: NSView {
-    var percent: Double = 0 {
+final class PressureProgressIndicator: NSProgressIndicator {
+    var pressureState: MemoryPressureState = .normal {
         didSet { needsDisplay = true }
     }
-    var fillColor: NSColor = .controlAccentColor {
-        didSet { needsDisplay = true }
-    }
-    private let cornerRadius: CGFloat = 3
-
-    override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        let bounds = self.bounds
-        let track = NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius)
-        NSColor.underPageBackgroundColor.setFill()
-        track.fill()
+        let fillColor: NSColor
+        switch pressureState {
+        case .normal: fillColor = .systemGreen
+        case .warning: fillColor = .systemYellow
+        case .critical: fillColor = .systemRed
+        }
 
-        let clamped = max(0, min(100, percent))
+        let bounds = self.bounds
+        let radius: CGFloat = 3.5
+
+        NSColor.underPageBackgroundColor.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+
+        let clamped = max(0, min(100, doubleValue))
         let fillWidth = bounds.width * CGFloat(clamped / 100.0)
         guard fillWidth > 0 else { return }
         let fillRect = NSRect(x: bounds.minX, y: bounds.minY, width: fillWidth, height: bounds.height)
-        let fill = NSBezierPath(roundedRect: fillRect, xRadius: cornerRadius, yRadius: cornerRadius)
         fillColor.setFill()
-        fill.fill()
+        NSBezierPath(roundedRect: fillRect, xRadius: radius, yRadius: radius).fill()
     }
 }
 
 final class StatusPanelView: NSView {
     private weak var collector: MetricsCollector?
     private let cpuValue = NSTextField(labelWithString: "--")
-    private let cpuProgress = MetricBarView()
+    private let cpuProgress = NSProgressIndicator()
     private let memValue = NSTextField(labelWithString: "--")
-    private let memProgress = MetricBarView()
-    private let pressureBar = MetricBarView()
+    private let memProgress = NSProgressIndicator()
+    private let pressureBar = PressureProgressIndicator()
 
     override var isFlipped: Bool { true }
 
@@ -60,8 +61,8 @@ final class StatusPanelView: NSView {
         addSubview(cpuValue)
         y += 18
 
+        configureProgress(cpuProgress)
         cpuProgress.frame = NSRect(x: x, y: y, width: contentWidth, height: 12)
-        cpuProgress.fillColor = .controlAccentColor
         addSubview(cpuProgress)
         y += 20
 
@@ -74,8 +75,8 @@ final class StatusPanelView: NSView {
         addSubview(memValue)
         y += 18
 
+        configureProgress(memProgress)
         memProgress.frame = NSRect(x: x, y: y, width: contentWidth, height: 12)
-        memProgress.fillColor = .controlAccentColor
         addSubview(memProgress)
         y += 20
 
@@ -84,25 +85,26 @@ final class StatusPanelView: NSView {
         addSubview(pressureTitle)
         y += 18
 
+        configureProgress(pressureBar)
         pressureBar.frame = NSRect(x: x, y: y, width: contentWidth, height: 12)
         addSubview(pressureBar)
+    }
+
+    private func configureProgress(_ p: NSProgressIndicator) {
+        p.minValue = 0
+        p.maxValue = 100
+        p.isIndeterminate = false
+        p.style = .bar
+        p.controlSize = .small
     }
 
     func refresh() {
         guard let c = collector else { return }
         cpuValue.stringValue = c.hasCPUSample ? "\(Int(c.cpuUsage.rounded()))%" : "--"
-        cpuProgress.percent = max(0, c.cpuUsage)
+        cpuProgress.doubleValue = max(0, c.cpuUsage)
         memValue.stringValue = "\(Int(c.memoryUsage.rounded()))%"
-        memProgress.percent = c.memoryUsage
-        pressureBar.percent = c.pressurePercent
-        pressureBar.fillColor = pressureColor(c.pressure)
-    }
-
-    private func pressureColor(_ state: MemoryPressureState) -> NSColor {
-        switch state {
-        case .normal: return .systemGreen
-        case .warning: return .systemYellow
-        case .critical: return .systemRed
-        }
+        memProgress.doubleValue = c.memoryUsage
+        pressureBar.doubleValue = c.pressurePercent
+        pressureBar.pressureState = c.pressure
     }
 }
