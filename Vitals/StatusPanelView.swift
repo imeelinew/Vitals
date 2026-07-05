@@ -1,12 +1,36 @@
 import AppKit
 
-final class PressureProgressIndicator: NSProgressIndicator {
+final class PressureBarContainer: NSView {
+    private let progress = NSProgressIndicator()
     var pressureState: MemoryPressureState = .normal {
         didSet { needsDisplay = true }
     }
+    var doubleValue: Double = 0 {
+        didSet { needsDisplay = true }
+    }
+
+    override var isFlipped: Bool { true }
+
+    init() {
+        super.init(frame: .zero)
+        progress.minValue = 0
+        progress.maxValue = 100
+        progress.isIndeterminate = false
+        progress.style = .bar
+        progress.controlSize = .small
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layout() {
+        super.layout()
+        progress.frame = bounds
+    }
 
     override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
+        progress.doubleValue = max(0, min(100, doubleValue))
+        progress.bounds = bounds
+        progress.draw(dirtyRect)
 
         let fillColor: NSColor
         switch pressureState {
@@ -18,7 +42,6 @@ final class PressureProgressIndicator: NSProgressIndicator {
         let clamped = max(0, min(100, doubleValue))
         let fillWidth = bounds.width * CGFloat(clamped / 100.0)
         guard fillWidth > 0 else { return }
-
         let fillRect = NSRect(x: bounds.minX, y: bounds.minY, width: fillWidth, height: bounds.height)
 
         NSGraphicsContext.current?.saveGraphicsState()
@@ -35,7 +58,7 @@ final class StatusPanelView: NSView {
     private let cpuProgress = NSProgressIndicator()
     private let memValue = NSTextField(labelWithString: "--")
     private let memProgress = NSProgressIndicator()
-    private let pressureBar = PressureProgressIndicator()
+    private let pressureBar = PressureBarContainer()
 
     override var isFlipped: Bool { true }
 
@@ -86,7 +109,6 @@ final class StatusPanelView: NSView {
         addSubview(pressureTitle)
         y += 18
 
-        configureProgress(pressureBar)
         pressureBar.frame = NSRect(x: x, y: y, width: contentWidth, height: 12)
         addSubview(pressureBar)
     }
