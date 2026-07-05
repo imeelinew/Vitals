@@ -5,7 +5,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let collector = MetricsCollector()
     private var panel: StatusPanelView?
     private var appListView: AppListView?
+    private var panelMenuItem: NSMenuItem?
+    private var appListItem: NSMenuItem?
     private var launchAtLoginItem: NSMenuItem?
+
+    private let titleAttr = NSMutableAttributedString()
+    private let titleFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         MenuBarPrefs.ensureDefaults()
@@ -35,37 +40,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func renderTitle() {
-        let attr = NSMutableAttributedString()
-        let baseFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        let baseColor = NSColor.labelColor
-
-        func append(_ text: String, color: NSColor = baseColor) {
-            attr.append(NSAttributedString(string: text, attributes: [
-                .font: baseFont,
-                .foregroundColor: color
-            ]))
-        }
+        titleAttr.beginEditing()
+        titleAttr.deleteCharacters(in: NSRange(location: 0, length: titleAttr.length))
 
         var first = true
         for item in MenuBarItem.allCases where MenuBarPrefs.isEnabled(item) {
-            if !first { append(" · ") }
+            if !first { appendTitle(" · ") }
             first = false
             switch item {
             case .cpu:
                 let cpuText = collector.hasCPUSample ? "\(Int(collector.cpuUsage.rounded()))%" : "--%"
-                append("CPU \(cpuText)")
+                appendTitle("CPU \(cpuText)")
             case .memory:
-                append("MEM \(Int(collector.memoryUsage.rounded()))%")
+                appendTitle("MEM \(Int(collector.memoryUsage.rounded()))%")
             case .pressure:
-                append("●", color: collector.pressure.color)
+                appendTitle("●", color: collector.pressure.color)
             }
         }
 
-        if attr.length == 0 {
+        titleAttr.endEditing()
+
+        if titleAttr.length == 0 {
             statusItem.button?.title = ""
         } else {
-            statusItem.button?.attributedTitle = attr
+            statusItem.button?.attributedTitle = titleAttr
         }
+    }
+
+    private func appendTitle(_ text: String, color: NSColor = .labelColor) {
+        titleAttr.append(NSAttributedString(string: text, attributes: [
+            .font: titleFont,
+            .foregroundColor: color
+        ]))
     }
 
     private func buildMenu() {
@@ -73,18 +79,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.delegate = self
 
         let panelItem = NSMenuItem()
-        let p = StatusPanelView(collector: collector)
-        panelItem.view = p
-        self.panel = p
         menu.addItem(panelItem)
+        self.panelMenuItem = panelItem
 
         menu.addItem(.separator())
 
         let appListItem = NSMenuItem()
-        let alv = AppListView()
-        appListItem.view = alv
-        self.appListView = alv
         menu.addItem(appListItem)
+        self.appListItem = appListItem
 
         menu.addItem(.separator())
 
@@ -141,11 +143,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         collector.sampleOnce()
+
+        if panel == nil, let pmItem = panelMenuItem {
+            let p = StatusPanelView(collector: collector)
+            pmItem.view = p
+            self.panel = p
+        }
+        panel?.refresh()
+
+        if appListView == nil, let alItem = appListItem {
+            let alv = AppListView()
+            alItem.view = alv
+            self.appListView = alv
+        }
         appListView?.refresh()
+
         launchAtLoginItem?.state = LaunchAtLogin.isEnabled ? .on : .off
     }
 
     func menuDidClose(_ menu: NSMenu) {
-        appListView?.clearRows()
+        panelMenuItem?.view = nil
+        appListItem?.view = nil
+        panel = nil
+        appListView = nil
     }
 }

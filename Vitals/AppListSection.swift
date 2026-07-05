@@ -2,12 +2,9 @@ import AppKit
 import Darwin
 
 struct RunningAppInfo {
-    let app: NSRunningApplication
+    let pid: pid_t
+    let name: String
     let memoryBytes: UInt64
-
-    var displayName: String {
-        app.localizedName ?? app.bundleIdentifier ?? "PID \(app.processIdentifier)"
-    }
 
     var memoryText: String {
         let mb = Double(memoryBytes) / 1_048_576
@@ -20,17 +17,23 @@ struct RunningAppInfo {
 
 enum AppListSection {
     static func collectAll() -> [RunningAppInfo] {
-        let ownPid = ProcessInfo.processInfo.processIdentifier
-        let grouped = groupedMemoryBytes()
-        var infos: [RunningAppInfo] = []
-        for app in NSWorkspace.shared.runningApplications {
-            guard app.activationPolicy == .regular, app.processIdentifier != ownPid else { continue }
-            let bundlePath = app.bundleURL?.path ?? ""
-            let bytes = grouped[bundlePath] ?? memoryBytes(for: app.processIdentifier)
-            infos.append(RunningAppInfo(app: app, memoryBytes: bytes))
+        autoreleasepool {
+            let ownPid = ProcessInfo.processInfo.processIdentifier
+            let grouped = groupedMemoryBytes()
+
+            var infos: [RunningAppInfo] = []
+            infos.reserveCapacity(grouped.count)
+
+            for app in NSWorkspace.shared.runningApplications {
+                guard app.activationPolicy == .regular, app.processIdentifier != ownPid else { continue }
+                let bundlePath = app.bundleURL?.path ?? ""
+                let bytes = grouped[bundlePath] ?? memoryBytes(for: app.processIdentifier)
+                let name = app.localizedName ?? app.bundleIdentifier ?? "PID \(app.processIdentifier)"
+                infos.append(RunningAppInfo(pid: app.processIdentifier, name: name, memoryBytes: bytes))
+            }
+            infos.sort { $0.memoryBytes > $1.memoryBytes }
+            return infos
         }
-        infos.sort { $0.memoryBytes > $1.memoryBytes }
-        return infos
     }
 
     private static func groupedMemoryBytes() -> [String: UInt64] {
@@ -40,16 +43,15 @@ enum AppListSection {
         let actual = proc_listpids(UInt32(PROC_ALL_PIDS), 0, &pids, bufferCount)
         let actualCount = Int(actual) / MemoryLayout<pid_t>.size
 
-        var pathBuffer = [CChar](repeating: 0, count: 4096)
+        var pathBuffer = [CChar](repeating: 0, count: 1024)
         var groups: [String: UInt64] = [:]
         for pid in pids.prefix(actualCount) {
-            let len = proc_pidpath(pid, &pathBuffer, 4096)
+            let len = proc_pidpath(pid, &pathBuffer, 1024)
             guard len > 0 else { continue }
             let p = String(cString: pathBuffer)
             guard let r = p.range(of: ".app/") else { continue }
             let bundle = String(p[..<r.lowerBound]) + ".app"
-            let bytes = memoryBytes(for: pid)
-            groups[bundle, default: 0] += bytes
+            groups[bundle, default: 0] += memoryBytes(for: pid)
         }
         return groups
     }
@@ -87,7 +89,7 @@ final class AppListView: NSView {
     private struct Row {
         let checkbox: NSButton
         let memLabel: NSTextField
-        let info: RunningAppInfo
+        let pid: pid_t
     }
 
     private var rows: [Row] = []
@@ -159,7 +161,7 @@ final class AppListView: NSView {
         let listY = titleY + titleH + 6
 
         for (i, info) in apps.enumerated() {
-            let cb = NSButton(checkboxWithTitle: info.displayName, target: self, action: #selector(checkboxToggled(_:)))
+            let cb = NSButton(checkboxWithTitle: info.name, target: self, action: #selector(checkboxToggled(_:)))
             cb.font = .systemFont(ofSize: 12)
             cb.lineBreakMode = .byTruncatingTail
 
@@ -174,7 +176,7 @@ final class AppListView: NSView {
 
             addSubview(cb)
             addSubview(memLabel)
-            rows.append(Row(checkbox: cb, memLabel: memLabel, info: info))
+            rows.append(Row(checkbox: cb, memLabel: memLabel, pid: info.pid))
         }
 
         layoutFrames(rowCount: apps.count)
@@ -211,9 +213,11 @@ final class AppListView: NSView {
     }
 
     @objc private func quitSelected() {
-        let toQuit = rows.filter { $0.checkbox.state == .on }.map { $0.info.app }
-        for app in toQuit {
-            app.terminate()
+        let pids = rows.filter { $0.checkbox.state == .on }.map { $0.pid }
+        for pid in pids {
+            if let app = NSRunningApplication(processIdentifier: pid) {
+                app.terminate()
+            }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.refresh()

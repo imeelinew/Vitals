@@ -2,7 +2,8 @@ import Foundation
 import Darwin
 
 final class CPUMetrics {
-    private var previousTicks: [Int32]?
+    private var current: [Int32] = []
+    private var previous: [Int32] = []
     private let host: host_t = mach_host_self()
 
     func sample() -> Double {
@@ -25,14 +26,16 @@ final class CPUMetrics {
 
         let states = Int(CPU_STATE_MAX)
         let n = Int(numCPU)
-        var current: [Int32] = []
-        current.reserveCapacity(n * states)
-        for i in 0..<(n * states) {
-            current.append(info[i])
+        let needed = n * states
+        if current.count != needed {
+            current = [Int32](repeating: 0, count: needed)
+        }
+        for i in 0..<needed {
+            current[i] = info[i]
         }
 
-        guard let prev = previousTicks, prev.count == current.count else {
-            previousTicks = current
+        guard !previous.isEmpty, previous.count == current.count else {
+            swap(&previous, &current)
             return .nan
         }
 
@@ -42,14 +45,14 @@ final class CPUMetrics {
         var idleDelta: Int64 = 0
         var idx = 0
         while idx < current.count {
-            userDelta   += Int64(current[idx + Int(CPU_STATE_USER)])   - Int64(prev[idx + Int(CPU_STATE_USER)])
-            systemDelta += Int64(current[idx + Int(CPU_STATE_SYSTEM)]) - Int64(prev[idx + Int(CPU_STATE_SYSTEM)])
-            niceDelta   += Int64(current[idx + Int(CPU_STATE_NICE)])   - Int64(prev[idx + Int(CPU_STATE_NICE)])
-            idleDelta   += Int64(current[idx + Int(CPU_STATE_IDLE)])   - Int64(prev[idx + Int(CPU_STATE_IDLE)])
+            userDelta   += Int64(current[idx + Int(CPU_STATE_USER)])   - Int64(previous[idx + Int(CPU_STATE_USER)])
+            systemDelta += Int64(current[idx + Int(CPU_STATE_SYSTEM)]) - Int64(previous[idx + Int(CPU_STATE_SYSTEM)])
+            niceDelta   += Int64(current[idx + Int(CPU_STATE_NICE)])   - Int64(previous[idx + Int(CPU_STATE_NICE)])
+            idleDelta   += Int64(current[idx + Int(CPU_STATE_IDLE)])   - Int64(previous[idx + Int(CPU_STATE_IDLE)])
             idx += states
         }
 
-        previousTicks = current
+        swap(&previous, &current)
 
         let total = userDelta + systemDelta + niceDelta + idleDelta
         guard total > 0 else { return 0 }

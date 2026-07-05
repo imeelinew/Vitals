@@ -25,9 +25,11 @@ final class MetricsCollector {
         }
 
         let t = DispatchSource.makeTimerSource(queue: queue)
-        t.schedule(deadline: .now(), repeating: 2.0)
+        t.schedule(deadline: .now(), repeating: 5.0)
         t.setEventHandler { [weak self] in
-            self?.tick()
+            autoreleasepool {
+                self?.tick()
+            }
         }
         t.resume()
         timer = t
@@ -35,7 +37,9 @@ final class MetricsCollector {
 
     func sampleOnce() {
         queue.async { [weak self] in
-            self?.tick()
+            autoreleasepool {
+                self?.tick()
+            }
         }
     }
 
