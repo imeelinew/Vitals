@@ -21,7 +21,7 @@ final class CPUMetrics {
         guard kr == KERN_SUCCESS, let info = cpuInfo else { return .nan }
         defer {
             let size = vm_size_t(cpuInfoCount) * vm_size_t(MemoryLayout<integer_t>.stride)
-            vm_deallocate(host, vm_address_t(UInt(bitPattern: info)), size)
+            vm_deallocate(mach_task_self_, vm_address_t(UInt(bitPattern: info)), size)
         }
 
         let states = Int(CPU_STATE_MAX)
