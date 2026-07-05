@@ -4,7 +4,6 @@ final class MetricsCollector {
     var cpuUsage: Double = -1
     var memoryUsage: Double = 0
     var pressure: MemoryPressureState = .normal
-    var pressurePercent: Double = 0
 
     var onUpdate: (() -> Void)?
 
@@ -44,7 +43,6 @@ final class MetricsCollector {
         let cpuVal = cpu.sample()
         let memPercent = memory.sample()
         let reconciledPressure = pressureMonitor.currentLevel()
-        let pressureLevel = Self.readPressureLevel()
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             if !cpuVal.isNaN {
@@ -54,16 +52,8 @@ final class MetricsCollector {
             if reconciledPressure != self.pressure {
                 self.pressure = reconciledPressure
             }
-            self.pressurePercent = pressureLevel
             self.onUpdate?()
         }
-    }
-
-    private static func readPressureLevel() -> Double {
-        var value: Int32 = 0
-        var size = MemoryLayout<Int32>.size
-        sysctlbyname("kern.memorystatus_level", &value, &size, nil, 0)
-        return max(0, min(100, Double(value)))
     }
 
     deinit {

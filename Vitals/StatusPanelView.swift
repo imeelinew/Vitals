@@ -1,70 +1,18 @@
 import AppKit
 
-final class PressureBarContainer: NSView {
-    private let progress = NSProgressIndicator()
-    var pressureState: MemoryPressureState = .normal {
-        didSet { needsDisplay = true }
-    }
-    var doubleValue: Double = 0 {
-        didSet { needsDisplay = true }
-    }
-
-    override var isFlipped: Bool { true }
-
-    init() {
-        super.init(frame: .zero)
-        progress.minValue = 0
-        progress.maxValue = 100
-        progress.isIndeterminate = false
-        progress.style = .bar
-        progress.controlSize = .small
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    override func layout() {
-        super.layout()
-        progress.frame = bounds
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        progress.doubleValue = max(0, min(100, doubleValue))
-        progress.bounds = bounds
-        progress.draw(dirtyRect)
-
-        let fillColor: NSColor
-        switch pressureState {
-        case .normal: fillColor = .systemGreen
-        case .warning: fillColor = .systemYellow
-        case .critical: fillColor = .systemRed
-        }
-
-        let clamped = max(0, min(100, doubleValue))
-        let fillWidth = bounds.width * CGFloat(clamped / 100.0)
-        guard fillWidth > 0 else { return }
-        let fillRect = NSRect(x: bounds.minX, y: bounds.minY, width: fillWidth, height: bounds.height)
-
-        NSGraphicsContext.current?.saveGraphicsState()
-        NSGraphicsContext.current?.compositingOperation = .sourceAtop
-        fillColor.setFill()
-        NSBezierPath(rect: fillRect).fill()
-        NSGraphicsContext.current?.restoreGraphicsState()
-    }
-}
-
 final class StatusPanelView: NSView {
     private weak var collector: MetricsCollector?
     private let cpuValue = NSTextField(labelWithString: "--")
     private let cpuProgress = NSProgressIndicator()
     private let memValue = NSTextField(labelWithString: "--")
     private let memProgress = NSProgressIndicator()
-    private let pressureBar = PressureBarContainer()
+    private let pressureDot = NSImageView()
 
     override var isFlipped: Bool { true }
 
     init(collector: MetricsCollector) {
         self.collector = collector
-        super.init(frame: NSRect(x: 0, y: 0, width: 220, height: 130))
+        super.init(frame: NSRect(x: 0, y: 0, width: 220, height: 110))
         setup()
         refresh()
     }
@@ -107,10 +55,12 @@ final class StatusPanelView: NSView {
         let pressureTitle = NSTextField(labelWithString: "内存压力")
         pressureTitle.frame = NSRect(x: x, y: y, width: 60, height: 14)
         addSubview(pressureTitle)
-        y += 18
 
-        pressureBar.frame = NSRect(x: x, y: y, width: contentWidth, height: 12)
-        addSubview(pressureBar)
+        pressureDot.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil)
+        pressureDot.contentTintColor = .systemGreen
+        pressureDot.symbolConfiguration = .init(pointSize: 12, weight: .regular)
+        pressureDot.frame = NSRect(x: x + contentWidth - 14, y: y, width: 14, height: 14)
+        addSubview(pressureDot)
     }
 
     private func configureProgress(_ p: NSProgressIndicator) {
@@ -127,7 +77,14 @@ final class StatusPanelView: NSView {
         cpuProgress.doubleValue = max(0, c.cpuUsage)
         memValue.stringValue = "\(Int(c.memoryUsage.rounded()))%"
         memProgress.doubleValue = c.memoryUsage
-        pressureBar.doubleValue = c.pressurePercent
-        pressureBar.pressureState = c.pressure
+        pressureDot.contentTintColor = pressureColor(c.pressure)
+    }
+
+    private func pressureColor(_ state: MemoryPressureState) -> NSColor {
+        switch state {
+        case .normal: return .systemGreen
+        case .warning: return .systemYellow
+        case .critical: return .systemRed
+        }
     }
 }
