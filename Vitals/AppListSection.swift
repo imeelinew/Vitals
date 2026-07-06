@@ -115,6 +115,7 @@ final class AppListView: NSView {
     }
 
     private var rows: [Row] = []
+    private var anchorIdx: Int?
     private let quitButton = NSButton()
     private let titleLabel = NSTextField(labelWithString: "运行中的应用")
     private let emptyLabel = NSTextField(labelWithString: "（无其他应用）")
@@ -165,6 +166,7 @@ final class AppListView: NSView {
             row.memLabel.removeFromSuperview()
         }
         rows = []
+        anchorIdx = nil
         quitButton.isEnabled = false
         quitButton.title = "退出选中的应用"
     }
@@ -216,10 +218,10 @@ final class AppListView: NSView {
             nameLabel.frame = NSRect(x: nameX, y: y, width: nameWidth, height: rowHeight)
             memLabel.frame = NSRect(x: memX, y: y, width: memLabelWidth, height: rowHeight)
 
-            addSubview(cb)
             addSubview(iconView)
             addSubview(nameLabel)
             addSubview(memLabel)
+            addSubview(cb)
             rows.append(Row(checkbox: cb, iconView: iconView, nameLabel: nameLabel, memLabel: memLabel, pid: info.pid))
         }
 
@@ -242,6 +244,20 @@ final class AppListView: NSView {
     }
 
     @objc private func checkboxToggled(_ sender: NSButton) {
+        guard let idx = rows.firstIndex(where: { $0.checkbox === sender }) else {
+            updateQuitButton()
+            return
+        }
+        if NSEvent.modifierFlags.contains(.shift), let anchor = anchorIdx {
+            let from = min(anchor, idx)
+            let to = max(anchor, idx)
+            let target = sender.state
+            for i in from...to where i != idx {
+                rows[i].checkbox.state = target
+            }
+        } else {
+            anchorIdx = idx
+        }
         updateQuitButton()
     }
 
