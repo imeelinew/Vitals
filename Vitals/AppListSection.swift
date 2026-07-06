@@ -116,6 +116,11 @@ final class AppListView: NSView {
 
     private var rows: [Row] = []
     private var anchorIdx: Int?
+    private var dragStartIdx: Int?
+    private var dragLastIdx: Int?
+    private var dragStartPoint: NSPoint?
+    private var dragDidMove = false
+    private var dragStartState: NSControl.StateValue = .off
     private let quitButton = NSButton()
     private let titleLabel = NSTextField(labelWithString: "运行中的应用")
     private let emptyLabel = NSTextField(labelWithString: "（无其他应用）")
@@ -167,6 +172,11 @@ final class AppListView: NSView {
         }
         rows = []
         anchorIdx = nil
+        dragStartIdx = nil
+        dragLastIdx = nil
+        dragStartPoint = nil
+        dragDidMove = false
+        dragStartState = .off
         quitButton.isEnabled = false
         quitButton.title = "退出选中的应用"
     }
@@ -193,10 +203,11 @@ final class AppListView: NSView {
         let listY = titleY + titleH + 6
 
         for (i, info) in apps.enumerated() {
-            let cb = NSButton(checkboxWithTitle: "", target: self, action: #selector(checkboxToggled(_:)))
+            let cb = DisplayCheckbox()
+            cb.setButtonType(.switch)
+            cb.title = ""
             cb.font = .systemFont(ofSize: 12)
             cb.isBordered = false
-            cb.wantsLayer = false
 
             let iconView = IconView()
             iconView.image = info.icon
@@ -218,10 +229,10 @@ final class AppListView: NSView {
             nameLabel.frame = NSRect(x: nameX, y: y, width: nameWidth, height: rowHeight)
             memLabel.frame = NSRect(x: memX, y: y, width: memLabelWidth, height: rowHeight)
 
+            addSubview(cb)
             addSubview(iconView)
             addSubview(nameLabel)
             addSubview(memLabel)
-            addSubview(cb)
             rows.append(Row(checkbox: cb, iconView: iconView, nameLabel: nameLabel, memLabel: memLabel, pid: info.pid))
         }
 
@@ -243,22 +254,66 @@ final class AppListView: NSView {
         quitButton.frame = NSRect(x: margin, y: quitY, width: contentWidth, height: quitH)
     }
 
-    @objc private func checkboxToggled(_ sender: NSButton) {
-        guard let idx = rows.firstIndex(where: { $0.checkbox === sender }) else {
-            updateQuitButton()
-            return
+    override func mouseDown(with event: NSEvent) {
+        dragStartPoint = convert(event.locationInWindow, from: nil)
+        dragStartIdx = rowIndex(at: event.locationInWindow)
+        dragLastIdx = dragStartIdx
+        dragDidMove = false
+        if let start = dragStartIdx, start < rows.count {
+            dragStartState = rows[start].checkbox.state
         }
-        if NSEvent.modifierFlags.contains(.shift), let anchor = anchorIdx {
-            let from = min(anchor, idx)
-            let to = max(anchor, idx)
-            let target = sender.state
-            for i in from...to where i != idx {
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = dragStartIdx, let startPoint = dragStartPoint else { return }
+        let p = convert(event.locationInWindow, from: nil)
+        let dx = p.x - startPoint.x
+        let dy = p.y - startPoint.y
+        if !dragDidMove, sqrt(dx * dx + dy * dy) < 3 { return }
+        dragDidMove = true
+        guard let current = rowIndex(at: event.locationInWindow), current < rows.count else { return }
+        guard current != dragLastIdx else { return }
+        let from = min(start, current)
+        let to = max(start, current)
+        let target: NSControl.StateValue = dragStartState == .on ? .off : .on
+        for i in from...to where i < rows.count {
+            rows[i].checkbox.state = target
+        }
+        dragLastIdx = current
+        updateQuitButton()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer {
+            dragStartIdx = nil
+            dragLastIdx = nil
+            dragStartPoint = nil
+            dragDidMove = false
+        }
+        guard let start = dragStartIdx, start < rows.count else { return }
+        if dragDidMove { return }
+        let row = rows[start]
+        if event.modifierFlags.contains(.shift), let anchor = anchorIdx {
+            let from = min(anchor, start)
+            let to = max(anchor, start)
+            let target: NSControl.StateValue = row.checkbox.state == .on ? .off : .on
+            for i in from...to {
                 rows[i].checkbox.state = target
             }
         } else {
-            anchorIdx = idx
+            row.checkbox.state = row.checkbox.state == .on ? .off : .on
+            anchorIdx = start
         }
         updateQuitButton()
+    }
+
+    private func rowIndex(at location: NSPoint) -> Int? {
+        let p = convert(location, from: nil)
+        let listY = titleY + titleH + 6
+        guard p.y >= listY else { return nil }
+        let rowY = p.y - listY
+        let idx = Int(rowY / (rowHeight + rowSpacing))
+        return idx >= 0 ? idx : nil
     }
 
     private func updateQuitButton() {
@@ -283,4 +338,8 @@ final class AppListView: NSView {
             self?.refresh()
         }
     }
+}
+
+final class DisplayCheckbox: NSButton {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
