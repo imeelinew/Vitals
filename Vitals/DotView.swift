@@ -32,3 +32,18 @@ final class BarView: NSView {
         }
     }
 }
+
+final class IconView: NSView {
+    var image: NSImage? {
+        didSet { needsDisplay = true }
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let image = image else { return }
+        let d = min(bounds.width, bounds.height)
+        let r = NSRect(x: bounds.midX - d / 2, y: bounds.midY - d / 2, width: d, height: d)
+        image.draw(in: r)
+    }
+}
