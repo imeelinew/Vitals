@@ -5,6 +5,7 @@ struct RunningAppInfo {
     let pid: pid_t
     let name: String
     let memoryBytes: UInt64
+    let icon: NSImage?
 
     var memoryText: String {
         let mb = Double(memoryBytes) / 1_048_576
@@ -29,7 +30,8 @@ enum AppListSection {
                 let bundlePath = app.bundleURL?.path ?? ""
                 let bytes = grouped[bundlePath] ?? memoryBytes(for: app.processIdentifier)
                 let name = app.localizedName ?? app.bundleIdentifier ?? "PID \(app.processIdentifier)"
-                infos.append(RunningAppInfo(pid: app.processIdentifier, name: name, memoryBytes: bytes))
+                let icon = downsampledIcon(for: bundlePath)
+                infos.append(RunningAppInfo(pid: app.processIdentifier, name: name, memoryBytes: bytes, icon: icon))
             }
             infos.sort { $0.memoryBytes > $1.memoryBytes }
             return infos
@@ -83,11 +85,31 @@ enum AppListSection {
         guard size == Int32(MemoryLayout<proc_taskinfo>.size) else { return 0 }
         return info.pti_resident_size
     }
+
+    private static func downsampledIcon(for path: String) -> NSImage? {
+        guard !path.isEmpty else { return nil }
+        let source = NSWorkspace.shared.icon(forFile: path)
+        guard source.isValid, source.size.width > 0, source.size.height > 0 else { return nil }
+        let targetSize = NSSize(width: 16, height: 16)
+        let target = NSImage(size: targetSize)
+        target.lockFocus()
+        if let ctx = NSGraphicsContext.current {
+            ctx.imageInterpolation = .high
+        }
+        source.draw(in: NSRect(origin: .zero, size: targetSize),
+                    from: NSRect(origin: .zero, size: source.size),
+                    operation: .copy,
+                    fraction: 1.0)
+        target.unlockFocus()
+        return target
+    }
 }
 
 final class AppListView: NSView {
     private struct Row {
         let checkbox: NSButton
+        let iconView: IconView
+        let nameLabel: NSTextField
         let memLabel: NSTextField
         let pid: pid_t
     }
@@ -104,6 +126,9 @@ final class AppListView: NSView {
     private let memLabelWidth: CGFloat = 56
     private let titleH: CGFloat = 16
     private let titleY: CGFloat = 8
+    private let boxOffset: CGFloat = 20
+    private let iconSize: CGFloat = 16
+    private let iconGap: CGFloat = 4
 
     override var isFlipped: Bool { true }
 
@@ -135,6 +160,8 @@ final class AppListView: NSView {
     func clearRows() {
         for row in rows {
             row.checkbox.removeFromSuperview()
+            row.iconView.removeFromSuperview()
+            row.nameLabel.removeFromSuperview()
             row.memLabel.removeFromSuperview()
         }
         rows = []
@@ -158,12 +185,24 @@ final class AppListView: NSView {
 
         let cbWidth = contentWidth - memLabelWidth - 6
         let memX = margin + contentWidth - memLabelWidth
+        let iconX = margin + boxOffset
+        let nameX = iconX + iconSize + iconGap
+        let nameWidth = cbWidth - boxOffset - iconSize - iconGap
         let listY = titleY + titleH + 6
 
         for (i, info) in apps.enumerated() {
-            let cb = NSButton(checkboxWithTitle: info.name, target: self, action: #selector(checkboxToggled(_:)))
+            let cb = NSButton(checkboxWithTitle: "", target: self, action: #selector(checkboxToggled(_:)))
             cb.font = .systemFont(ofSize: 12)
-            cb.lineBreakMode = .byTruncatingTail
+            cb.isBordered = false
+            cb.wantsLayer = false
+
+            let iconView = IconView()
+            iconView.image = info.icon
+
+            let nameLabel = NSTextField(labelWithString: info.name)
+            nameLabel.font = .systemFont(ofSize: 12)
+            nameLabel.lineBreakMode = .byTruncatingTail
+            nameLabel.textColor = .labelColor
 
             let memLabel = NSTextField(labelWithString: info.memoryText)
             memLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
@@ -171,12 +210,17 @@ final class AppListView: NSView {
             memLabel.textColor = .secondaryLabelColor
 
             let y = listY + CGFloat(i) * (rowHeight + rowSpacing)
+            let iconY = y + (rowHeight - iconSize) / 2
             cb.frame = NSRect(x: margin, y: y, width: cbWidth, height: rowHeight)
+            iconView.frame = NSRect(x: iconX, y: iconY, width: iconSize, height: iconSize)
+            nameLabel.frame = NSRect(x: nameX, y: y, width: nameWidth, height: rowHeight)
             memLabel.frame = NSRect(x: memX, y: y, width: memLabelWidth, height: rowHeight)
 
             addSubview(cb)
+            addSubview(iconView)
+            addSubview(nameLabel)
             addSubview(memLabel)
-            rows.append(Row(checkbox: cb, memLabel: memLabel, pid: info.pid))
+            rows.append(Row(checkbox: cb, iconView: iconView, nameLabel: nameLabel, memLabel: memLabel, pid: info.pid))
         }
 
         layoutFrames(rowCount: apps.count)
