@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
@@ -11,7 +12,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let titleAttr = NSMutableAttributedString()
     private let titleFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-    private var lastTitleKey: String = ""
+    private struct TitleState: Equatable {
+        let cpu: Int?
+        let memory: Int
+        let pressure: Int
+        let enabledMask: UInt8
+    }
+
+    private var lastTitleState: TitleState?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         MenuBarPrefs.ensureDefaults()
@@ -41,29 +49,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func renderTitle() {
-        let cpuText = collector.hasCPUSample ? "\(Int(collector.cpuUsage.rounded()))%" : "--%"
-        let memText = "\(Int(collector.memoryUsage.rounded()))%"
-        let pressureKey = collector.pressure.rawValue
+        let cpu = collector.hasCPUSample ? Int(collector.cpuUsage.rounded()) : nil
+        let memory = Int(collector.memoryUsage.rounded())
+        let cpuEnabled = MenuBarPrefs.isEnabled(.cpu)
+        let memoryEnabled = MenuBarPrefs.isEnabled(.memory)
+        let pressureEnabled = MenuBarPrefs.isEnabled(.pressure)
+        let enabledMask: UInt8 = (cpuEnabled ? 1 : 0) | (memoryEnabled ? 2 : 0) | (pressureEnabled ? 4 : 0)
+        let state = TitleState(cpu: cpu, memory: memory, pressure: collector.pressure.rawValue, enabledMask: enabledMask)
+        if state == lastTitleState { return }
+        lastTitleState = state
 
-        let key = "cpu=\(cpuText)|mem=\(memText)|p=\(pressureKey)|enabled=\(MenuBarPrefs.isEnabled(.cpu))\(MenuBarPrefs.isEnabled(.memory))\(MenuBarPrefs.isEnabled(.pressure))"
-        if key == lastTitleKey { return }
-        lastTitleKey = key
+        let cpuText = cpu.map { "\($0)%" } ?? "--%"
+        let memText = "\(memory)%"
 
         titleAttr.beginEditing()
         titleAttr.deleteCharacters(in: NSRange(location: 0, length: titleAttr.length))
 
-        var first = true
-        for item in MenuBarItem.allCases where MenuBarPrefs.isEnabled(item) {
-            if !first { appendTitle(" · ") }
-            first = false
-            switch item {
-            case .cpu:
-                appendTitle("CPU \(cpuText)")
-            case .memory:
-                appendTitle("MEM \(memText)")
-            case .pressure:
-                appendTitle("●", color: collector.pressure.color)
-            }
+        if cpuEnabled { appendTitle("CPU \(cpuText)") }
+        if memoryEnabled {
+            if titleAttr.length > 0 { appendTitle(" · ") }
+            appendTitle("MEM \(memText)")
+        }
+        if pressureEnabled {
+            if titleAttr.length > 0 { appendTitle(" · ") }
+            appendTitle("●", color: collector.pressure.color)
         }
 
         titleAttr.endEditing()
@@ -127,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let next = sender.state != .on
         MenuBarPrefs.setEnabled(item, next)
         sender.state = next ? .on : .off
-        lastTitleKey = ""
+        lastTitleState = nil
         renderTitle()
     }
 
@@ -175,5 +184,9 @@ extension AppDelegate: NSMenuDelegate {
         appListItem?.view = nil
         panel = nil
         appListView = nil
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            malloc_zone_pressure_relief(nil, 0)
+        }
     }
 }
