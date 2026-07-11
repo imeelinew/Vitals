@@ -98,6 +98,69 @@ enum SafeAppPrefs {
     }
 }
 
+private enum AppProcessTerminator {
+    private static let pathBufferSize: Int32 = 4_096
+
+    static func forceQuit(pid: pid_t) {
+        autoreleasepool {
+            guard let app = NSRunningApplication(processIdentifier: pid) else { return }
+            let bundlePath = app.bundleURL.map(canonicalPath)
+            var relatedPIDs = bundlePath.map(processesInsideBundle) ?? []
+            relatedPIDs.insert(pid)
+
+            _ = app.forceTerminate()
+
+            guard let bundlePath else { return }
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.75) {
+                autoreleasepool {
+                    killRemaining(relatedPIDs, insideBundle: bundlePath)
+                }
+            }
+        }
+    }
+
+    private static func processesInsideBundle(_ bundlePath: String) -> Set<pid_t> {
+        let bufferSize = proc_listpids(UInt32(PROC_ALL_PIDS), 0, nil, 0)
+        guard bufferSize > 0 else { return [] }
+
+        let count = Int(bufferSize) / MemoryLayout<pid_t>.size
+        var pids = [pid_t](repeating: 0, count: count)
+        let actualSize = proc_listpids(UInt32(PROC_ALL_PIDS), 0, &pids, bufferSize)
+        let actualCount = Int(actualSize) / MemoryLayout<pid_t>.size
+
+        var matches = Set<pid_t>()
+        for pid in pids.prefix(actualCount) where pid > 0 {
+            if executablePath(for: pid).map({ isInsideBundle($0, bundlePath: bundlePath) }) == true {
+                matches.insert(pid)
+            }
+        }
+        return matches
+    }
+
+    private static func killRemaining(_ pids: Set<pid_t>, insideBundle bundlePath: String) {
+        for pid in pids where pid > 0 {
+            guard let path = executablePath(for: pid), isInsideBundle(path, bundlePath: bundlePath) else {
+                continue
+            }
+            _ = Darwin.kill(pid, SIGKILL)
+        }
+    }
+
+    private static func executablePath(for pid: pid_t) -> String? {
+        var buffer = [CChar](repeating: 0, count: Int(pathBufferSize))
+        guard proc_pidpath(pid, &buffer, UInt32(pathBufferSize)) > 0 else { return nil }
+        return canonicalPath(URL(fileURLWithPath: String(cString: buffer)))
+    }
+
+    private static func canonicalPath(_ url: URL) -> String {
+        url.resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    private static func isInsideBundle(_ executablePath: String, bundlePath: String) -> Bool {
+        executablePath.hasPrefix(bundlePath + "/")
+    }
+}
+
 final class AppListView: NSView {
     private struct Row {
         let frame: NSRect
@@ -285,7 +348,7 @@ final class AppListView: NSView {
             safeTitle = "切换安全区"
         }
         drawButton(title: safeTitle, frame: safeButtonFrame, enabled: safeEligibleCount > 0)
-        let quitTitle = selectedCount == 0 ? "退出选中的应用" : "退出选中的 \(selectedCount) 个应用"
+        let quitTitle = selectedCount == 0 ? "强制退出选中的应用" : "强制退出选中的 \(selectedCount) 个应用"
         drawButton(title: quitTitle, frame: quitButtonFrame, enabled: selectedCount > 0)
     }
 
@@ -433,7 +496,7 @@ final class AppListView: NSView {
     private func quitSelected() {
         let pids = rows.lazy.filter(\.isSelected).map(\.pid)
         for pid in pids {
-            NSRunningApplication(processIdentifier: pid)?.terminate()
+            AppProcessTerminator.forceQuit(pid: pid)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.refresh()
