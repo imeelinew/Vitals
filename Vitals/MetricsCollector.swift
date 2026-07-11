@@ -46,16 +46,12 @@ final class MetricsCollector {
     private func tick() {
         let cpuVal = cpu.sample()
         let memPercent = memory.sample()
-        let reconciledPressure = pressureMonitor.currentLevel()
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             if !cpuVal.isNaN {
                 self.cpuUsage = cpuVal
             }
             self.memoryUsage = memPercent
-            if reconciledPressure != self.pressure {
-                self.pressure = reconciledPressure
-            }
             self.onUpdate?()
         }
     }
