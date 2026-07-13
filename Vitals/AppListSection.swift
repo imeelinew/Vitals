@@ -85,6 +85,28 @@ enum AppListSection {
     }
 }
 
+private enum AppIcon {
+    static let size = NSSize(width: 16, height: 16)
+
+    static func downsampled(for bundleURL: URL?) -> NSImage? {
+        guard let path = bundleURL?.path else { return nil }
+        let source = NSWorkspace.shared.icon(forFile: path)
+        guard source.isValid, source.size.width > 0, source.size.height > 0 else { return nil }
+
+        let target = NSImage(size: size)
+        target.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        source.draw(
+            in: NSRect(origin: .zero, size: size),
+            from: NSRect(origin: .zero, size: source.size),
+            operation: .copy,
+            fraction: 1
+        )
+        target.unlockFocus()
+        return target
+    }
+}
+
 enum SafeAppPrefs {
     private static let key = "appList.safeAppBundleIDs"
     private static let defaults = UserDefaults.standard
@@ -165,6 +187,7 @@ final class AppListView: NSView {
     private struct Row {
         let frame: NSRect
         let pid: pid_t
+        let icon: NSImage?
         let name: String
         let memoryText: String
         let bundleIdentifier: String?
@@ -198,6 +221,8 @@ final class AppListView: NSView {
     private let titleHeight: CGFloat = 16
     private let titleY: CGFloat = 8
     private let checkboxSize: CGFloat = 12
+    private let iconSize: CGFloat = 16
+    private let iconGap: CGFloat = 4
     private let buttonHeight: CGFloat = 22
 
     private let titleAttributes: [NSAttributedString.Key: Any] = [
@@ -250,17 +275,19 @@ final class AppListView: NSView {
         dragDidMove = false
 
         let safeIDs = SafeAppPrefs.bundleIDs()
-        var normal: [(RunningAppInfo, String?)] = []
-        var safe: [(RunningAppInfo, String?)] = []
+        var normal: [(RunningAppInfo, String?, NSImage?)] = []
+        var safe: [(RunningAppInfo, String?, NSImage?)] = []
         normal.reserveCapacity(apps.count)
         safe.reserveCapacity(safeIDs.count)
 
         for info in apps {
-            let bundleID = NSRunningApplication(processIdentifier: info.pid)?.bundleIdentifier
+            let app = NSRunningApplication(processIdentifier: info.pid)
+            let bundleID = app?.bundleIdentifier
+            let icon = AppIcon.downsampled(for: app?.bundleURL)
             if let bundleID, safeIDs.contains(bundleID) {
-                safe.append((info, bundleID))
+                safe.append((info, bundleID, icon))
             } else {
-                normal.append((info, bundleID))
+                normal.append((info, bundleID, icon))
             }
         }
 
@@ -286,11 +313,12 @@ final class AppListView: NSView {
         frame = NSRect(x: 0, y: 0, width: margin * 2 + contentWidth, height: totalHeight)
     }
 
-    private func appendRows(_ infos: [(RunningAppInfo, String?)], isSafe: Bool, y: inout CGFloat) {
-        for (info, bundleID) in infos {
+    private func appendRows(_ infos: [(RunningAppInfo, String?, NSImage?)], isSafe: Bool, y: inout CGFloat) {
+        for (info, bundleID, icon) in infos {
             rows.append(Row(
                 frame: NSRect(x: margin, y: y, width: contentWidth, height: rowHeight),
                 pid: info.pid,
+                icon: icon,
                 name: info.name,
                 memoryText: info.memoryText,
                 bundleIdentifier: bundleID,
@@ -376,7 +404,22 @@ final class AppListView: NSView {
             checkbox.stroke()
         }
 
-        let nameX = checkboxRect.maxX + 6
+        let iconRect = NSRect(
+            x: checkboxRect.maxX + 6,
+            y: row.frame.midY - iconSize / 2,
+            width: iconSize,
+            height: iconSize
+        )
+        row.icon?.draw(
+            in: iconRect,
+            from: NSRect(origin: .zero, size: AppIcon.size),
+            operation: .sourceOver,
+            fraction: 1,
+            respectFlipped: true,
+            hints: nil
+        )
+
+        let nameX = iconRect.maxX + iconGap
         let memoryX = row.frame.maxX - memLabelWidth
         (row.name as NSString).draw(
             in: NSRect(x: nameX, y: row.frame.minY + 1, width: memoryX - nameX - 5, height: rowHeight),
