@@ -107,6 +107,40 @@ private enum AppIcon {
     }
 }
 
+private final class ConfirmDangerButton: NSButton {
+    private static let armedTitleAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+        .foregroundColor: NSColor.white
+    ]
+
+    var isArmed = false {
+        didSet {
+            if isArmed != oldValue { needsDisplay = true }
+        }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard isArmed else {
+            super.draw(dirtyRect)
+            return
+        }
+
+        let buttonRect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let path = NSBezierPath(roundedRect: buttonRect, xRadius: 6, yRadius: 6)
+        let color = isHighlighted
+            ? NSColor.systemRed.blended(withFraction: 0.18, of: .black) ?? .systemRed
+            : .systemRed
+        color.setFill()
+        path.fill()
+
+        let size = (title as NSString).size(withAttributes: Self.armedTitleAttributes)
+        (title as NSString).draw(
+            at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2),
+            withAttributes: Self.armedTitleAttributes
+        )
+    }
+}
+
 enum SafeAppPrefs {
     private static let key = "appList.safeAppBundleIDs"
     private static let defaults = UserDefaults.standard
@@ -208,10 +242,10 @@ final class AppListView: NSView {
     private var dragStartPoint: NSPoint?
     private var dragDidMove = false
     private var dragStartSelected = false
-    private var safeButtonFrame = NSRect.zero
-    private var quitButtonFrame = NSRect.zero
-    private var quitAllButtonFrame = NSRect.zero
     private var quitAllNeedsConfirmation = false
+    private let safeZoneButton = NSButton()
+    private let quitButton = NSButton()
+    private let quitAllButton = ConfirmDangerButton()
 
     private let margin: CGFloat = 12
     private let contentWidth: CGFloat = 196
@@ -243,26 +277,27 @@ final class AppListView: NSView {
         .font: NSFont.systemFont(ofSize: 11, weight: .medium),
         .foregroundColor: NSColor.tertiaryLabelColor
     ]
-    private let buttonAttributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: 11),
-        .foregroundColor: NSColor.labelColor
-    ]
-    private let disabledButtonAttributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: 11),
-        .foregroundColor: NSColor.disabledControlTextColor
-    ]
-    private let dangerButtonAttributes: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-        .foregroundColor: NSColor.white
-    ]
 
     override var isFlipped: Bool { true }
 
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: 220, height: 60))
+        configureButton(safeZoneButton, action: #selector(toggleSelectedSafeZone))
+        configureButton(quitButton, action: #selector(quitSelected))
+        configureButton(quitAllButton, action: #selector(quitAllButtonPressed))
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func configureButton(_ button: NSButton, action: Selector) {
+        button.bezelStyle = .rounded
+        button.controlSize = .small
+        button.font = .systemFont(ofSize: 11, weight: .medium)
+        button.target = self
+        button.action = action
+        button.isEnabled = false
+        addSubview(button)
+    }
 
     func refresh() {
         autoreleasepool {
@@ -313,13 +348,18 @@ final class AppListView: NSView {
 
         let contentBottom = apps.isEmpty ? y + rowHeight : y - rowSpacing
         let safeY = contentBottom + 10
-        safeButtonFrame = apps.isEmpty ? .zero : NSRect(x: margin, y: safeY, width: contentWidth, height: buttonHeight)
         let quitY = apps.isEmpty ? safeY : safeY + buttonHeight + 6
-        quitButtonFrame = apps.isEmpty ? .zero : NSRect(x: margin, y: quitY, width: contentWidth, height: buttonHeight)
         let quitAllY = apps.isEmpty ? quitY : quitY + buttonHeight + 6
-        quitAllButtonFrame = apps.isEmpty ? .zero : NSRect(x: margin, y: quitAllY, width: contentWidth, height: buttonHeight)
+        let showsButtons = !apps.isEmpty
+        safeZoneButton.isHidden = !showsButtons
+        quitButton.isHidden = !showsButtons
+        quitAllButton.isHidden = !showsButtons
+        safeZoneButton.frame = showsButtons ? NSRect(x: margin, y: safeY, width: contentWidth, height: buttonHeight) : .zero
+        quitButton.frame = showsButtons ? NSRect(x: margin, y: quitY, width: contentWidth, height: buttonHeight) : .zero
+        quitAllButton.frame = showsButtons ? NSRect(x: margin, y: quitAllY, width: contentWidth, height: buttonHeight) : .zero
         let totalHeight = apps.isEmpty ? contentBottom + 10 : quitAllY + buttonHeight + 10
         frame = NSRect(x: 0, y: 0, width: margin * 2 + contentWidth, height: totalHeight)
+        updateButtons()
     }
 
     private func appendRows(_ infos: [(RunningAppInfo, String?, NSImage?)], isSafe: Bool, y: inout CGFloat) {
@@ -362,36 +402,6 @@ final class AppListView: NSView {
         for row in rows where dirtyRect.intersects(row.frame) {
             drawRow(row)
         }
-
-        var selectedCount = 0
-        var hasSelectedSafeApp = false
-        var safeEligibleCount = 0
-        var allEligibleSafe = true
-        var allEligibleUnsafe = true
-        for row in rows where row.isSelected {
-            selectedCount += 1
-            hasSelectedSafeApp = hasSelectedSafeApp || row.isSafe
-            guard row.bundleIdentifier != nil else { continue }
-            safeEligibleCount += 1
-            allEligibleSafe = allEligibleSafe && row.isSafe
-            allEligibleUnsafe = allEligibleUnsafe && !row.isSafe
-        }
-        let safeTitle: String
-        if safeEligibleCount == 0 {
-            safeTitle = "安全区"
-        } else if allEligibleSafe {
-            safeTitle = "移出安全区"
-        } else if allEligibleUnsafe {
-            safeTitle = "移入安全区"
-        } else {
-            safeTitle = "切换安全区"
-        }
-        drawButton(title: safeTitle, frame: safeButtonFrame, enabled: safeEligibleCount > 0)
-        let quitTitle = selectedCount == 0 ? "强制退出选中的应用" : "强制退出选中的 \(selectedCount) 个应用"
-        drawButton(title: quitTitle, frame: quitButtonFrame, enabled: selectedCount > 0 && !hasSelectedSafeApp)
-        let hasUnsafeApp = rows.contains { !$0.isSafe }
-        let quitAllTitle = quitAllNeedsConfirmation ? "再次点击以确认" : "退出所有运行中的应用"
-        drawDangerButton(title: quitAllTitle, frame: quitAllButtonFrame, enabled: hasUnsafeApp)
     }
 
     private func drawRow(_ row: Row) {
@@ -446,35 +456,6 @@ final class AppListView: NSView {
         )
     }
 
-    private func drawButton(title: String, frame: NSRect, enabled: Bool) {
-        let path = NSBezierPath(roundedRect: frame, xRadius: 5, yRadius: 5)
-        (enabled ? NSColor.controlColor : NSColor.controlColor.withAlphaComponent(0.45)).setFill()
-        path.fill()
-        NSColor.separatorColor.setStroke()
-        path.lineWidth = 1
-        path.stroke()
-
-        let attributes = enabled ? buttonAttributes : disabledButtonAttributes
-        let size = (title as NSString).size(withAttributes: attributes)
-        (title as NSString).draw(
-            at: NSPoint(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2),
-            withAttributes: attributes
-        )
-    }
-
-    private func drawDangerButton(title: String, frame: NSRect, enabled: Bool) {
-        let path = NSBezierPath(roundedRect: frame, xRadius: 5, yRadius: 5)
-        NSColor.systemRed.withAlphaComponent(enabled ? 1 : 0.35).setFill()
-        path.fill()
-
-        let attributes = enabled ? dangerButtonAttributes : disabledButtonAttributes
-        let size = (title as NSString).size(withAttributes: attributes)
-        (title as NSString).draw(
-            at: NSPoint(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2),
-            withAttributes: attributes
-        )
-    }
-
     override func mouseDown(with event: NSEvent) {
         if event.modifierFlags.contains(.control), toggleSafeZone(at: event.locationInWindow) {
             return
@@ -503,6 +484,7 @@ final class AppListView: NSView {
         }
         dragLastIdx = current
         needsDisplay = true
+        updateButtons()
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -511,25 +493,6 @@ final class AppListView: NSView {
             dragLastIdx = nil
             dragStartPoint = nil
             dragDidMove = false
-        }
-
-        let point = convert(event.locationInWindow, from: nil)
-        if safeButtonFrame.contains(point), canToggleSelectedSafeZone {
-            toggleSelectedSafeZone()
-            return
-        }
-        if quitButtonFrame.contains(point), canQuitSelected {
-            quitSelected()
-            return
-        }
-        if quitAllButtonFrame.contains(point), rows.contains(where: { !$0.isSafe }) {
-            if quitAllNeedsConfirmation {
-                quitAllUnsafeApps()
-            } else {
-                quitAllNeedsConfirmation = true
-                needsDisplay = true
-            }
-            return
         }
 
         guard let start = dragStartIdx, !dragDidMove else { return }
@@ -543,6 +506,7 @@ final class AppListView: NSView {
             anchorIdx = start
         }
         needsDisplay = true
+        updateButtons()
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -568,10 +532,6 @@ final class AppListView: NSView {
         return true
     }
 
-    private var canToggleSelectedSafeZone: Bool {
-        rows.contains { $0.isSelected && $0.bundleIdentifier != nil }
-    }
-
     private var canQuitSelected: Bool {
         var hasSelection = false
         for row in rows where row.isSelected {
@@ -581,7 +541,43 @@ final class AppListView: NSView {
         return hasSelection
     }
 
-    private func quitSelected() {
+    private func updateButtons() {
+        var selectedCount = 0
+        var hasSelectedSafeApp = false
+        var safeEligibleCount = 0
+        var allEligibleSafe = true
+        var allEligibleUnsafe = true
+
+        for row in rows where row.isSelected {
+            selectedCount += 1
+            hasSelectedSafeApp = hasSelectedSafeApp || row.isSafe
+            guard row.bundleIdentifier != nil else { continue }
+            safeEligibleCount += 1
+            allEligibleSafe = allEligibleSafe && row.isSafe
+            allEligibleUnsafe = allEligibleUnsafe && !row.isSafe
+        }
+
+        if safeEligibleCount == 0 {
+            safeZoneButton.title = "安全区"
+        } else if allEligibleSafe {
+            safeZoneButton.title = "移出安全区"
+        } else if allEligibleUnsafe {
+            safeZoneButton.title = "移入安全区"
+        } else {
+            safeZoneButton.title = "切换安全区"
+        }
+        safeZoneButton.isEnabled = safeEligibleCount > 0
+
+        quitButton.title = selectedCount == 0 ? "强制退出选中的应用" : "强制退出选中的 \(selectedCount) 个应用"
+        quitButton.isEnabled = selectedCount > 0 && !hasSelectedSafeApp
+
+        quitAllButton.title = quitAllNeedsConfirmation ? "再次点击以确认" : "退出所有运行中的应用"
+        quitAllButton.isEnabled = rows.contains { !$0.isSafe }
+        quitAllButton.hasDestructiveAction = quitAllNeedsConfirmation
+        quitAllButton.isArmed = quitAllNeedsConfirmation
+    }
+
+    @objc private func quitSelected() {
         guard canQuitSelected else { return }
         let pids = rows.lazy.filter(\.isSelected).map(\.pid)
         for pid in pids {
@@ -592,8 +588,19 @@ final class AppListView: NSView {
         }
     }
 
+    @objc private func quitAllButtonPressed() {
+        guard rows.contains(where: { !$0.isSafe }) else { return }
+        if quitAllNeedsConfirmation {
+            quitAllUnsafeApps()
+        } else {
+            quitAllNeedsConfirmation = true
+            updateButtons()
+        }
+    }
+
     private func quitAllUnsafeApps() {
         quitAllNeedsConfirmation = false
+        updateButtons()
         let pids = rows.lazy.filter { !$0.isSafe }.map(\.pid)
         for pid in pids {
             AppProcessTerminator.forceQuit(pid: pid)
@@ -603,7 +610,7 @@ final class AppListView: NSView {
         }
     }
 
-    private func toggleSelectedSafeZone() {
+    @objc private func toggleSelectedSafeZone() {
         let selected = rows.filter { $0.isSelected && $0.bundleIdentifier != nil }
         guard !selected.isEmpty else { return }
 
