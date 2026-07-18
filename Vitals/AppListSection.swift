@@ -616,10 +616,10 @@ final class AppListView: NSView {
         }
         safeZoneButton.isEnabled = safeEligibleCount > 0
 
-        quitButton.title = selectedCount == 0 ? "强制退出选中的应用" : "强制退出选中的 \(selectedCount) 个应用"
+        quitButton.title = "退出选中的应用"
         quitButton.isEnabled = selectedCount > 0 && !hasSelectedSafeApp
 
-        quitAllButton.title = quitAllNeedsConfirmation ? "再次点击以确认" : "退出所有运行中的应用"
+        quitAllButton.title = quitAllNeedsConfirmation ? "再次点击以确认" : "清空工作区"
         quitAllButton.isEnabled = rows.contains { !$0.isSafe }
         quitAllButton.hasDestructiveAction = quitAllNeedsConfirmation
         quitAllButton.isArmed = quitAllNeedsConfirmation
