@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Darwin
 
 struct RunningAppInfo {
@@ -214,6 +215,53 @@ private enum AppProcessTerminator {
 
     private static func isInsideBundle(_ executablePath: String, bundlePath: String) -> Bool {
         executablePath.hasPrefix(bundlePath + "/")
+    }
+}
+
+private enum RunningAppWindowCloser {
+    static func requestAccessIfNeeded() -> Bool {
+        guard !AXIsProcessTrusted() else { return true }
+        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        _ = AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
+        return false
+    }
+
+    static func closeAll() {
+        autoreleasepool {
+            closeAllRunningApplicationWindows()
+        }
+    }
+
+    private static func closeAllRunningApplicationWindows() {
+        guard AXIsProcessTrusted() else { return }
+
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        for app in NSWorkspace.shared.runningApplications {
+            guard app.processIdentifier != ownPID, app.activationPolicy != .prohibited else { continue }
+            closeWindows(of: app.processIdentifier)
+        }
+    }
+
+    private static func closeWindows(of pid: pid_t) {
+        let application = AXUIElementCreateApplication(pid)
+        var windowsValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            application,
+            kAXWindowsAttribute as CFString,
+            &windowsValue
+        ) == .success, let windows = windowsValue as? [AXUIElement] else { return }
+
+        for window in windows {
+            var closeButtonValue: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(
+                window,
+                kAXCloseButtonAttribute as CFString,
+                &closeButtonValue
+            ) == .success, let closeButtonValue else { continue }
+
+            let closeButton = closeButtonValue as! AXUIElement
+            _ = AXUIElementPerformAction(closeButton, kAXPressAction as CFString)
+        }
     }
 }
 
@@ -599,12 +647,19 @@ final class AppListView: NSView {
     }
 
     private func quitAllUnsafeApps() {
+        guard RunningAppWindowCloser.requestAccessIfNeeded() else {
+            quitAllNeedsConfirmation = false
+            updateButtons()
+            return
+        }
+
         quitAllNeedsConfirmation = false
         updateButtons()
         let pids = rows.lazy.filter { !$0.isSafe }.map(\.pid)
         for pid in pids {
             AppProcessTerminator.forceQuit(pid: pid)
         }
+        RunningAppWindowCloser.closeAll()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.refresh()
         }
