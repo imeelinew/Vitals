@@ -108,37 +108,182 @@ private enum AppIcon {
     }
 }
 
-private final class ConfirmDangerButton: NSButton {
-    private static let armedTitleAttributes: [NSAttributedString.Key: Any] = [
+private final class HoldDangerButton: NSButton {
+    private static let holdDuration: Double = 1.2
+    private static let frameInterval: TimeInterval = 1.0 / 30.0
+    private static let feedbackResetDelay: TimeInterval = 0.25
+    private static let initialProgress: CGFloat = 0.03
+    private static let holdTitle = "长按以确认"
+    private static let holdTitleAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+        .foregroundColor: NSColor.systemRed
+    ]
+    private static let filledTitleAttributes: [NSAttributedString.Key: Any] = [
         .font: NSFont.systemFont(ofSize: 11, weight: .medium),
         .foregroundColor: NSColor.white
     ]
 
-    var isArmed = false {
-        didSet {
-            if isArmed != oldValue { needsDisplay = true }
+    private var holdProgress: CGFloat = 0
+    private var isHolding = false
+    private var hasConfirmation = false
+    private var resetWorkItem: DispatchWorkItem?
+
+    override func mouseDown(with event: NSEvent) {
+        guard isEnabled, let trackingWindow = window else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        resetWorkItem?.cancel()
+        resetWorkItem = nil
+        hasConfirmation = false
+        isHolding = true
+        setHoldProgress(Self.initialProgress)
+
+        let startedAt = DispatchTime.now().uptimeNanoseconds
+        let eventMask: NSEvent.EventTypeMask = [.leftMouseDragged, .leftMouseUp]
+        var didTrigger = false
+        var wasCancelled = false
+        var endedByMouseUp = false
+
+        while !endedByMouseUp {
+            guard window === trackingWindow, trackingWindow.isVisible else {
+                wasCancelled = true
+                break
+            }
+
+            if !wasCancelled, !didTrigger {
+                let elapsedNanoseconds = DispatchTime.now().uptimeNanoseconds - startedAt
+                let elapsed = Double(elapsedNanoseconds) / 1_000_000_000
+                setHoldProgress(max(holdProgress, CGFloat(elapsed / Self.holdDuration)))
+
+                if holdProgress >= 1 {
+                    didTrigger = true
+                    hasConfirmation = true
+                    if !sendAction(action, to: target) {
+                        hasConfirmation = false
+                    }
+                }
+            }
+
+            let deadline = Date(timeIntervalSinceNow: Self.frameInterval)
+            guard let nextEvent = trackingWindow.nextEvent(
+                matching: eventMask,
+                until: deadline,
+                inMode: .eventTracking,
+                dequeue: true
+            ) else {
+                continue
+            }
+
+            switch nextEvent.type {
+            case .leftMouseDragged:
+                let point = convert(nextEvent.locationInWindow, from: nil)
+                if !bounds.contains(point) {
+                    wasCancelled = true
+                    resetVisualState()
+                }
+            case .leftMouseUp:
+                endedByMouseUp = true
+            default:
+                break
+            }
+        }
+
+        isHolding = false
+        if didTrigger || wasCancelled {
+            resetVisualState()
+        } else {
+            scheduleVisualReset()
         }
     }
 
+    func consumeConfirmation() -> Bool {
+        guard hasConfirmation else { return false }
+        hasConfirmation = false
+        return true
+    }
+
     override func draw(_ dirtyRect: NSRect) {
-        guard isArmed else {
+        guard isHolding || holdProgress > 0 else {
             super.draw(dirtyRect)
             return
         }
 
         let buttonRect = bounds.insetBy(dx: 0.5, dy: 0.5)
         let path = NSBezierPath(roundedRect: buttonRect, xRadius: 6, yRadius: 6)
-        let color = isHighlighted
-            ? NSColor.systemRed.blended(withFraction: 0.18, of: .black) ?? .systemRed
-            : .systemRed
-        color.setFill()
-        path.fill()
 
-        let size = (title as NSString).size(withAttributes: Self.armedTitleAttributes)
-        (title as NSString).draw(
-            at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2),
-            withAttributes: Self.armedTitleAttributes
+        NSColor.systemRed.withAlphaComponent(0.14).setFill()
+        path.fill()
+        NSColor.systemRed.withAlphaComponent(0.38).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+
+        let progressRect = NSRect(
+            x: buttonRect.minX,
+            y: buttonRect.minY,
+            width: buttonRect.width * min(holdProgress, 1),
+            height: buttonRect.height
         )
+        NSGraphicsContext.saveGraphicsState()
+        path.addClip()
+        NSColor.systemRed.setFill()
+        progressRect.fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        let title = Self.holdTitle as NSString
+        let size = title.size(withAttributes: Self.holdTitleAttributes)
+        let titlePoint = NSPoint(
+            x: bounds.midX - size.width / 2,
+            y: bounds.midY - size.height / 2
+        )
+        title.draw(
+            at: titlePoint,
+            withAttributes: Self.holdTitleAttributes
+        )
+
+        NSGraphicsContext.saveGraphicsState()
+        path.addClip()
+        NSBezierPath(rect: progressRect).addClip()
+        title.draw(
+            at: titlePoint,
+            withAttributes: Self.filledTitleAttributes
+        )
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private func setHoldProgress(_ progress: CGFloat) {
+        let clamped = min(max(progress, 0), 1)
+        guard clamped != holdProgress else { return }
+        holdProgress = clamped
+        needsDisplay = true
+        displayIfNeeded()
+    }
+
+    private func scheduleVisualReset() {
+        resetWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.resetWorkItem = nil
+            self.resetVisualState()
+        }
+        resetWorkItem = item
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.feedbackResetDelay,
+            execute: item
+        )
+    }
+
+    private func resetVisualState() {
+        isHolding = false
+        holdProgress = 0
+        hasConfirmation = false
+        needsDisplay = true
+        displayIfNeeded()
+    }
+
+    deinit {
+        resetWorkItem?.cancel()
     }
 }
 
@@ -290,10 +435,9 @@ final class AppListView: NSView {
     private var dragStartPoint: NSPoint?
     private var dragDidMove = false
     private var dragStartSelected = false
-    private var quitAllNeedsConfirmation = false
     private let safeZoneButton = NSButton()
     private let quitButton = NSButton()
-    private let quitAllButton = ConfirmDangerButton()
+    private let quitAllButton = HoldDangerButton()
 
     private let margin: CGFloat = 12
     private let contentWidth: CGFloat = 196
@@ -362,8 +506,6 @@ final class AppListView: NSView {
         dragLastIdx = nil
         dragStartPoint = nil
         dragDidMove = false
-        quitAllNeedsConfirmation = false
-
         let safeIDs = SafeAppPrefs.bundleIDs()
         var normal: [(RunningAppInfo, String?, NSImage?)] = []
         var safe: [(RunningAppInfo, String?, NSImage?)] = []
@@ -619,10 +761,9 @@ final class AppListView: NSView {
         quitButton.title = "退出选中的应用"
         quitButton.isEnabled = selectedCount > 0 && !hasSelectedSafeApp
 
-        quitAllButton.title = quitAllNeedsConfirmation ? "再次点击以确认" : "清空工作区"
+        quitAllButton.title = "清空工作区"
         quitAllButton.isEnabled = rows.contains { !$0.isSafe }
-        quitAllButton.hasDestructiveAction = quitAllNeedsConfirmation
-        quitAllButton.isArmed = quitAllNeedsConfirmation
+        quitAllButton.hasDestructiveAction = false
     }
 
     @objc private func quitSelected() {
@@ -637,24 +778,14 @@ final class AppListView: NSView {
     }
 
     @objc private func quitAllButtonPressed() {
-        guard rows.contains(where: { !$0.isSafe }) else { return }
-        if quitAllNeedsConfirmation {
-            quitAllUnsafeApps()
-        } else {
-            quitAllNeedsConfirmation = true
-            updateButtons()
-        }
+        guard rows.contains(where: { !$0.isSafe }),
+              quitAllButton.consumeConfirmation() else { return }
+        quitAllUnsafeApps()
     }
 
     private func quitAllUnsafeApps() {
-        guard RunningAppWindowCloser.requestAccessIfNeeded() else {
-            quitAllNeedsConfirmation = false
-            updateButtons()
-            return
-        }
+        guard RunningAppWindowCloser.requestAccessIfNeeded() else { return }
 
-        quitAllNeedsConfirmation = false
-        updateButtons()
         let pids = rows.lazy.filter { !$0.isSafe }.map(\.pid)
         for pid in pids {
             AppProcessTerminator.forceQuit(pid: pid)

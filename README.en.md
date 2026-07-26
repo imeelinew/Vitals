@@ -6,7 +6,7 @@
 
 <p align="center">
   A lightweight system monitor that lives in the macOS menu bar.<br>
-  CPU, memory, memory pressure, and one-click workspace clearing.
+  CPU, memory, memory pressure, and press-and-hold workspace clearing.
 </p>
 
 
@@ -46,12 +46,12 @@ Activity Monitor is complete, but heavy for “glance at resources, quit a few a
 - **Menu bar first**: CPU, memory usage, and memory pressure sit at the top of the panel.
 - **Memory-sorted app list**: see regular running apps with icons and footprints.
 - **Safe zone**: protect apps you do not want bulk-quit to touch.
-- **Clear workspace**: quit unprotected apps in one action to free memory and desktop space.
+- **Clear workspace**: press and hold to quit unprotected apps and free memory and desktop space.
 - **Lightweight always-on**: sampling and UI are constrained for a low physical footprint while staying in the menu bar.
 
 ## Menu Bar
 
-Open the menu for CPU and memory bars, a memory-pressure indicator, and the running-app list. Quit selected apps, or clear the workspace; safe-zone apps are listed separately and excluded from bulk actions.
+Open the menu for CPU and memory bars, a memory-pressure indicator, and the running-app list. Quit selected apps, or press and hold to clear the workspace; safe-zone apps are listed separately and excluded from bulk actions.
 
 ## More features
 
