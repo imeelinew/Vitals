@@ -570,7 +570,7 @@ final class AppListView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        ("运行中的应用" as NSString).draw(
+        ("工作区" as NSString).draw(
             in: NSRect(x: margin, y: titleY, width: contentWidth, height: titleHeight),
             withAttributes: titleAttributes
         )
@@ -758,7 +758,7 @@ final class AppListView: NSView {
         }
         safeZoneButton.isEnabled = safeEligibleCount > 0
 
-        quitButton.title = "退出选中的应用"
+        quitButton.title = "退出应用"
         quitButton.isEnabled = selectedCount > 0 && !hasSelectedSafeApp
 
         quitAllButton.title = "清空工作区"
