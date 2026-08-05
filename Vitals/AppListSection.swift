@@ -110,8 +110,8 @@ private enum AppIcon {
 
 private final class HoldDangerButton: NSButton {
     private static let holdDuration: Double = 1.2
-    private static let frameInterval: TimeInterval = 1.0 / 30.0
-    private static let feedbackResetDelay: TimeInterval = 0.25
+    private static let frameInterval: TimeInterval = 1.0 / 60.0
+    private static let retractionDuration: Double = 0.22
     private static let initialProgress: CGFloat = 0.03
     private static let holdTitle = "长按以确认"
     private static let holdTitleAttributes: [NSAttributedString.Key: Any] = [
@@ -126,7 +126,7 @@ private final class HoldDangerButton: NSButton {
     private var holdProgress: CGFloat = 0
     private var isHolding = false
     private var hasConfirmation = false
-    private var resetWorkItem: DispatchWorkItem?
+    private var retractionTimer: Timer?
 
     override func mouseDown(with event: NSEvent) {
         guard isEnabled, let trackingWindow = window else {
@@ -134,8 +134,8 @@ private final class HoldDangerButton: NSButton {
             return
         }
 
-        resetWorkItem?.cancel()
-        resetWorkItem = nil
+        stopRetraction()
+        holdProgress = 0
         hasConfirmation = false
         isHolding = true
         setHoldProgress(Self.initialProgress)
@@ -159,6 +159,9 @@ private final class HoldDangerButton: NSButton {
 
                 if holdProgress >= 1 {
                     didTrigger = true
+                    // Finish and flush the confirmation animation before any
+                    // potentially slow application termination work begins.
+                    commitFullProgress(in: trackingWindow)
                     hasConfirmation = true
                     if !sendAction(action, to: target) {
                         hasConfirmation = false
@@ -191,10 +194,10 @@ private final class HoldDangerButton: NSButton {
         }
 
         isHolding = false
-        if didTrigger || wasCancelled {
+        if wasCancelled {
             resetVisualState()
         } else {
-            scheduleVisualReset()
+            startRetraction()
         }
     }
 
@@ -260,21 +263,50 @@ private final class HoldDangerButton: NSButton {
         displayIfNeeded()
     }
 
-    private func scheduleVisualReset() {
-        resetWorkItem?.cancel()
-        let item = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.resetWorkItem = nil
-            self.resetVisualState()
+    private func commitFullProgress(in trackingWindow: NSWindow) {
+        holdProgress = 1
+        needsDisplay = true
+        displayIfNeeded()
+        trackingWindow.displayIfNeeded()
+        trackingWindow.flushIfNeeded()
+    }
+
+    private func startRetraction() {
+        stopRetraction()
+        let startingProgress = holdProgress
+        guard startingProgress > 0 else {
+            resetVisualState()
+            return
         }
-        resetWorkItem = item
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.feedbackResetDelay,
-            execute: item
-        )
+
+        let startedAt = DispatchTime.now().uptimeNanoseconds
+        let timer = Timer(timeInterval: Self.frameInterval, repeats: true) { [weak self] timer in
+            guard let self else {
+                timer.invalidate()
+                return
+            }
+
+            let elapsedNanoseconds = DispatchTime.now().uptimeNanoseconds - startedAt
+            let elapsed = Double(elapsedNanoseconds) / 1_000_000_000
+            let fraction = min(elapsed / Self.retractionDuration, 1)
+            let remaining = 1 - fraction
+            self.setHoldProgress(startingProgress * CGFloat(remaining * remaining * remaining))
+
+            if fraction >= 1 {
+                self.resetVisualState()
+            }
+        }
+        retractionTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func stopRetraction() {
+        retractionTimer?.invalidate()
+        retractionTimer = nil
     }
 
     private func resetVisualState() {
+        stopRetraction()
         isHolding = false
         holdProgress = 0
         hasConfirmation = false
@@ -283,7 +315,7 @@ private final class HoldDangerButton: NSButton {
     }
 
     deinit {
-        resetWorkItem?.cancel()
+        retractionTimer?.invalidate()
     }
 }
 
