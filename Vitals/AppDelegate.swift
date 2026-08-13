@@ -4,11 +4,13 @@ import Darwin
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let collector = MetricsCollector()
+    private let updateService = UpdateService()
     private var panel: StatusPanelView?
     private var appListView: AppListView?
     private var panelMenuItem: NSMenuItem?
     private var appListItem: NSMenuItem?
     private var launchAtLoginItem: NSMenuItem?
+    private var checkForUpdatesItem: NSMenuItem?
 
     private let titleAttr = NSMutableAttributedString()
     private let titleFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
@@ -123,6 +125,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(launchItem)
         self.launchAtLoginItem = launchItem
 
+        let checkItem = NSMenuItem(title: "检查更新…", action: #selector(checkForUpdates), keyEquivalent: "")
+        checkItem.target = self
+        menu.addItem(checkItem)
+        self.checkForUpdatesItem = checkItem
+
         let quitItem = NSMenuItem(title: "退出 Vitals", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
@@ -153,6 +160,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         launchAtLoginItem?.state = LaunchAtLogin.isEnabled ? .on : .off
     }
 
+    @objc private func checkForUpdates() {
+        updateService.checkForUpdates()
+    }
+
     @objc private func quit() {
         NSApp.terminate(nil)
     }
@@ -177,6 +188,7 @@ extension AppDelegate: NSMenuDelegate {
         appListView?.refresh()
 
         launchAtLoginItem?.state = LaunchAtLogin.isEnabled ? .on : .off
+        checkForUpdatesItem?.isEnabled = updateService.canCheckForUpdates
     }
 
     func menuDidClose(_ menu: NSMenu) {
