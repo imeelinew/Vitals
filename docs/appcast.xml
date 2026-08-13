@@ -3,5 +3,14 @@
     <channel>
         <title>Vitals Updates</title>
         <language>en</language>
+        <item>
+            <title>0.1.5</title>
+            <pubDate>Thu, 13 Aug 2026 02:36:17 +0000</pubDate>
+            <link>https://github.com/imeelinew/Vitals</link>
+            <sparkle:version>5</sparkle:version>
+            <sparkle:shortVersionString>0.1.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/imeelinew/Vitals/releases/download/v0.1.5/Vitals-0.1.5.zip" length="3047456" type="application/octet-stream" sparkle:edSignature="XtooSXaI3EOF+Po4J61ruwnh/Ua3klp4Wh/NS94AswDpBpZyhgQTnnJqd5KxNu4QvNHXAaKI3oueBMIxCYmfBA=="/>
+        </item>
     </channel>
 </rss>
