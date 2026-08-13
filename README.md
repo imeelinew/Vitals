@@ -25,6 +25,7 @@
   <a href="https://github.com/imeelinew/Vitals/releases/latest"><img src="https://img.shields.io/github/v/release/imeelinew/Vitals" alt="Release"></a>
   <img src="https://img.shields.io/badge/macOS-26%2B-black" alt="macOS 26+">
   <img src="https://img.shields.io/badge/Swift-5-orange" alt="Swift 5">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License"></a>
 </p>
 
 ---
@@ -72,3 +73,7 @@ xcodebuild -project Vitals.xcodeproj -scheme Vitals -configuration Release build
 ```
 
 构建产物在 Xcode DerivedData 的 `Build/Products/Release/Vitals.app`。Release 配置开启死代码剥离与 strip，便于验证 footprint。
+
+## 许可
+
+本项目采用 [MIT](LICENSE) 许可证。
