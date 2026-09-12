@@ -4,7 +4,7 @@ Vitals 是一个常驻菜单栏的 macOS 监控应用（LSUIElement），用户�
 
 ## 硬性规则
 
-1. **禁止引入会拉入 SwiftUI 的依赖。** 此前因 `ServiceManagement` 传递依赖 SwiftUI，footprint 一度飙到 72 MB。开机自启已改用 `~/Library/LaunchAgents/` plist 实现，不要切回 `SMAppService`。不要 `import SwiftUI`，不要 `import SwiftData`，不要用 AppIntents。
+1. **禁止直接使用 SwiftUI。** 不要 `import SwiftUI`，不要 `import SwiftData`，不要用 AppIntents。开机自启使用 `SMAppService.mainApp`，但正常常驻路径只能读取 `UserDefaults` 缓存；`SMAppService.status/register/unregister` 只能用于首次迁移或用户切换开关，禁止放进菜单刷新、采样或定时路径。Sparkle 2 已经传递链接 `ServiceManagement`，当前缓存方案的 Release footprint 实测仍为 13 MB。
 
 2. **禁止用 `NSImage(systemSymbolName:)`。** 它会加载整个 SFSymbols.framework（111 MB 映射 + per-process 状态）。用 `NSBezierPath` 自绘（见 `DotView.swift`）。
 
@@ -30,10 +30,10 @@ Vitals 是一个常驻菜单栏的 macOS 监控应用（LSUIElement），用户�
 
 ## 验证
 
-改动内存相关代码后，用 Release 配置构建并用 `footprint <pid>` 确认物理 footprint 仍 ≤ 15 MB。用 `vmmap <pid> | grep -i swiftui` 确认 SwiftUI 未被加载。
+改动内存相关代码后，用 Release 配置构建并用 `footprint <pid>` 确认物理 footprint 仍 ≤ 15 MB。Sparkle 2.9.5 本身会通过 `ServiceManagement` 映射 SwiftUI，因此 `vmmap` 出现 SwiftUI 不再能单独判定回退；仍然禁止 Vitals 源码直接使用 SwiftUI，并以实际物理 footprint 为硬指标。
 
 ## 背景
 
-2026-07 的一次重构把 footprint 从 ~25 MB 推到 72 MB，根因是 `ServiceManagement` → SwiftUI 传递依赖 + SFSymbols + 视图常驻 + 2 秒采样。修复后降到 12 MB。本文件防止回退。
+2026-07 的一次重构把 footprint 从 ~25 MB 推到 72 MB，根因是 `ServiceManagement` → SwiftUI 传递依赖 + SFSymbols + 视图常驻 + 2 秒采样。修复后降到 12 MB。2026-09 排查登录项时发现，后续引入的 Sparkle 2 已经重新传递链接 `ServiceManagement`；将登录项状态缓存、避免常驻路径查询后，使用 `SMAppService.mainApp` 的 Release 构建稳定在 13 MB。
 
 同月发现 `CPUMetrics` 的 `vm_deallocate` 误用 `mach_host_self()`（host port）而非 `mach_task_self_`（task port），导致每轮采样泄漏 1 个 16K page，3.5 小时后 footprint 从 12 MB 涨到 66 MB。修复后 5 分钟内零增长。
