@@ -1,31 +1,53 @@
 import Foundation
+import ServiceManagement
 
 enum LaunchAtLogin {
-    private static let agentPath = FileManager.default.homeDirectoryForCurrentUser
+    private static let enabledKey = "launchAtLoginEnabled"
+    private static let legacyAgentPath = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/LaunchAgents/com.eli.Vitals.plist")
 
-    private static func plistData() throws -> Data {
-        let exePath = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/Vitals").path
-        let dict: [String: Any] = [
-            "Label": "com.eli.Vitals",
-            "ProgramArguments": [exePath],
-            "RunAtLoad": true,
-            "KeepAlive": false
-        ]
-        return try PropertyListSerialization.data(fromPropertyList: dict, format: .xml, options: 0)
-    }
-
+    /// Avoid repeated ServiceManagement state queries in the normal 24/7
+    /// process. Reconcile once during migration, then cache the user's choice.
     static var isEnabled: Bool {
-        FileManager.default.fileExists(atPath: agentPath.path)
+        UserDefaults.standard.bool(forKey: enabledKey)
     }
 
     static func enable() throws {
-        let dir = agentPath.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try plistData().write(to: agentPath)
+        let service = SMAppService.mainApp
+        if service.status != .enabled {
+            try service.register()
+        }
+        guard service.status == .enabled else { return }
+        UserDefaults.standard.set(true, forKey: enabledKey)
     }
 
     static func disable() throws {
-        try? FileManager.default.removeItem(at: agentPath)
+        let service = SMAppService.mainApp
+        if service.status != .notRegistered {
+            try service.unregister()
+        }
+        UserDefaults.standard.set(false, forKey: enabledKey)
+    }
+
+    /// Synchronizes existing installations once. Users with the old external
+    /// LaunchAgent are moved to the system-managed main-app login item. The
+    /// old plist is removed only after registration succeeds.
+    static func migrateIfNeeded() throws {
+        let defaults = UserDefaults.standard
+        let hasCachedChoice = defaults.object(forKey: enabledKey) != nil
+        let hasLegacyAgent = FileManager.default.fileExists(atPath: legacyAgentPath.path)
+        guard !hasCachedChoice || hasLegacyAgent else { return }
+
+        let service = SMAppService.mainApp
+        if hasLegacyAgent, service.status != .enabled {
+            try service.register()
+        }
+
+        let isRegistered = service.status == .enabled
+        defaults.set(isRegistered, forKey: enabledKey)
+
+        if hasLegacyAgent, isRegistered {
+            try FileManager.default.removeItem(at: legacyAgentPath)
+        }
     }
 }

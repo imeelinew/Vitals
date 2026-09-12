@@ -2,6 +2,10 @@ import AppKit
 import Darwin
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let instanceLockPath = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Caches/com.eli.Vitals/instance.lock")
+
+    private var instanceLockFD: Int32 = -1
     private var statusItem: NSStatusItem!
     private let collector = MetricsCollector()
     private let updateService = UpdateService()
@@ -24,8 +28,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastTitleState: TitleState?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        guard acquireInstanceLock() else {
+            NSApp.terminate(nil)
+            return
+        }
+
         MenuBarPrefs.ensureDefaults()
         ensureInitialLaunchAtLogin()
+        migrateLaunchAtLoginIfNeeded()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "CPU --% · MEM --%"
@@ -37,12 +47,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildMenu()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        guard instanceLockFD >= 0 else { return }
+        flock(instanceLockFD, LOCK_UN)
+        close(instanceLockFD)
+        instanceLockFD = -1
+    }
+
+    private func acquireInstanceLock() -> Bool {
+        let lockDirectory = Self.instanceLockPath.deletingLastPathComponent()
+        do {
+            try FileManager.default.createDirectory(at: lockDirectory, withIntermediateDirectories: true)
+        } catch {
+            print("[launch] unable to create instance-lock directory: \(error)")
+            return true
+        }
+
+        let fd = open(Self.instanceLockPath.path, O_CREAT | O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR)
+        guard fd >= 0 else {
+            print("[launch] unable to open instance lock: \(String(cString: strerror(errno)))")
+            return true
+        }
+
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+            close(fd)
+            return false
+        }
+
+        instanceLockFD = fd
+        return true
+    }
+
     private func ensureInitialLaunchAtLogin() {
         let key = "didInitialLaunchAtLoginSetup"
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: key) else { return }
         try? LaunchAtLogin.enable()
         defaults.set(true, forKey: key)
+    }
+
+    private func migrateLaunchAtLoginIfNeeded() {
+        do {
+            try LaunchAtLogin.migrateIfNeeded()
+        } catch {
+            print("[launch] unable to migrate launch-at-login state: \(error)")
+        }
     }
 
     private func refreshUI() {
