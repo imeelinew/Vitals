@@ -17,44 +17,136 @@ struct RunningAppInfo {
 }
 
 enum AppListSection {
+    private struct AppMemoryGroup {
+        let pid: pid_t
+        let name: String
+        let bundlePath: String?
+        let coalitionID: UInt64?
+        var memoryBytes: UInt64 = 0
+    }
+
+    // PROC_PIDCOALITIONINFO is the Darwin proc_pidinfo flavor used by XNU, but
+    // its declaration lives in Apple's private proc_info header. Keep the
+    // small value type local instead of importing or retaining a heavyweight API.
+    private struct ProcessCoalitionInfo {
+        var resourceID: UInt64 = 0
+        var jetsamID: UInt64 = 0
+        var reserved1: UInt64 = 0
+        var reserved2: UInt64 = 0
+        var reserved3: UInt64 = 0
+    }
+
+    private static let procPIDCoalitionInfo: Int32 = 20
+    private static let processPathBufferSize: UInt32 = 4_096
+
     static func collectAll() -> [RunningAppInfo] {
         autoreleasepool {
             let ownPid = ProcessInfo.processInfo.processIdentifier
-            let grouped = groupedMemoryBytes()
-
-            var infos: [RunningAppInfo] = []
-            infos.reserveCapacity(grouped.count)
-
+            var groups: [AppMemoryGroup] = []
             for app in NSWorkspace.shared.runningApplications {
                 guard app.activationPolicy == .regular, app.processIdentifier != ownPid else { continue }
-                let bundlePath = app.bundleURL?.path ?? ""
-                let bytes = grouped[bundlePath] ?? memoryBytes(for: app.processIdentifier)
-                let name = app.localizedName ?? app.bundleIdentifier ?? "PID \(app.processIdentifier)"
-                infos.append(RunningAppInfo(pid: app.processIdentifier, name: name, memoryBytes: bytes))
+                let pid = app.processIdentifier
+                groups.append(AppMemoryGroup(
+                    pid: pid,
+                    name: app.localizedName ?? app.bundleIdentifier ?? "PID \(pid)",
+                    bundlePath: app.bundleURL?.path,
+                    coalitionID: resourceCoalitionID(for: pid)
+                ))
+            }
+
+            aggregateMemory(into: &groups)
+
+            var infos = groups.map {
+                RunningAppInfo(pid: $0.pid, name: $0.name, memoryBytes: $0.memoryBytes)
             }
             infos.sort { $0.memoryBytes > $1.memoryBytes }
             return infos
         }
     }
 
-    private static func groupedMemoryBytes() -> [String: UInt64] {
+    private static func aggregateMemory(into groups: inout [AppMemoryGroup]) {
+        guard !groups.isEmpty else { return }
+
+        var coalitionOwners: [UInt64: Int] = [:]
+        var ambiguousCoalitions = Set<UInt64>()
+        var bundleOwners: [String: Int] = [:]
+
+        for index in groups.indices {
+            if let coalitionID = groups[index].coalitionID, coalitionID != 0 {
+                if coalitionOwners[coalitionID] == nil, !ambiguousCoalitions.contains(coalitionID) {
+                    coalitionOwners[coalitionID] = index
+                } else {
+                    coalitionOwners.removeValue(forKey: coalitionID)
+                    ambiguousCoalitions.insert(coalitionID)
+                }
+            }
+            if let bundlePath = groups[index].bundlePath {
+                bundleOwners[bundlePath] = index
+            }
+        }
+
         let bufferCount = proc_listpids(UInt32(PROC_ALL_PIDS), 0, nil, 0)
+        guard bufferCount > 0 else {
+            sampleMainProcesses(into: &groups)
+            return
+        }
+
         let count = Int(bufferCount) / MemoryLayout<pid_t>.size
         var pids = [pid_t](repeating: 0, count: count)
         let actual = proc_listpids(UInt32(PROC_ALL_PIDS), 0, &pids, bufferCount)
-        let actualCount = Int(actual) / MemoryLayout<pid_t>.size
-
-        var pathBuffer = [CChar](repeating: 0, count: 1024)
-        var groups: [String: UInt64] = [:]
-        for pid in pids.prefix(actualCount) {
-            let len = proc_pidpath(pid, &pathBuffer, 1024)
-            guard len > 0 else { continue }
-            let p = String(cString: pathBuffer)
-            guard let r = p.range(of: ".app/") else { continue }
-            let bundle = String(p[..<r.lowerBound]) + ".app"
-            groups[bundle, default: 0] += memoryBytes(for: pid)
+        guard actual > 0 else {
+            sampleMainProcesses(into: &groups)
+            return
         }
-        return groups
+
+        let actualCount = Int(actual) / MemoryLayout<pid_t>.size
+        var pathBuffer = [CChar](repeating: 0, count: Int(processPathBufferSize))
+
+        for pid in pids.prefix(actualCount) where pid > 0 {
+            var owner: Int?
+            if let coalitionID = resourceCoalitionID(for: pid) {
+                owner = coalitionOwners[coalitionID]
+            }
+
+            if owner == nil {
+                let length = proc_pidpath(pid, &pathBuffer, processPathBufferSize)
+                if length > 0 {
+                    let path = String(cString: pathBuffer)
+                    if let bundlePath = outermostBundlePath(in: path) {
+                        owner = bundleOwners[bundlePath]
+                    }
+                }
+            }
+
+            if let owner {
+                groups[owner].memoryBytes &+= memoryBytes(for: pid)
+            }
+        }
+    }
+
+    private static func sampleMainProcesses(into groups: inout [AppMemoryGroup]) {
+        for index in groups.indices {
+            groups[index].memoryBytes = memoryBytes(for: groups[index].pid)
+        }
+    }
+
+    private static func outermostBundlePath(in executablePath: String) -> String? {
+        guard let range = executablePath.range(of: ".app/") else { return nil }
+        return String(executablePath[..<range.lowerBound]) + ".app"
+    }
+
+    private static func resourceCoalitionID(for pid: pid_t) -> UInt64? {
+        var info = ProcessCoalitionInfo()
+        let expectedSize = Int32(MemoryLayout<ProcessCoalitionInfo>.size)
+        let size = proc_pidinfo(
+            pid,
+            procPIDCoalitionInfo,
+            0,
+            &info,
+            expectedSize
+        )
+        guard size == expectedSize, info.resourceID != 0 else { return nil }
+        return info.resourceID
     }
 
     private static func memoryBytes(for pid: pid_t) -> UInt64 {
