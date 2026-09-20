@@ -18,6 +18,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let titleAttr = NSMutableAttributedString()
     private let titleFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+    private let emptySelectionImage = NSImage(
+        systemSymbolName: "gauge.with.needle",
+        accessibilityDescription: "Vitals"
+    )
     private struct TitleState: Equatable {
         let cpu: Int?
         let memory: Int
@@ -106,7 +110,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let memoryEnabled = MenuBarPrefs.isEnabled(.memory)
         let pressureEnabled = MenuBarPrefs.isEnabled(.pressure)
         let enabledMask: UInt8 = (cpuEnabled ? 1 : 0) | (memoryEnabled ? 2 : 0) | (pressureEnabled ? 4 : 0)
-        let state = TitleState(cpu: cpu, memory: memory, pressure: collector.pressure.rawValue, enabledMask: enabledMask)
+        let state = TitleState(
+            cpu: cpuEnabled ? cpu : nil,
+            memory: memoryEnabled ? memory : 0,
+            pressure: pressureEnabled ? collector.pressure.rawValue : 0,
+            enabledMask: enabledMask
+        )
         if state == lastTitleState { return }
         lastTitleState = state
 
@@ -130,7 +139,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if titleAttr.length == 0 {
             statusItem.button?.title = ""
+            statusItem.button?.image = emptySelectionImage
+            statusItem.button?.imagePosition = .imageOnly
         } else {
+            statusItem.button?.image = nil
+            statusItem.button?.imagePosition = .noImage
             statusItem.button?.attributedTitle = titleAttr
         }
     }
