@@ -18,10 +18,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let titleAttr = NSMutableAttributedString()
     private let titleFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-    private let emptySelectionImage = NSImage(
-        systemSymbolName: "gauge.with.needle",
-        accessibilityDescription: "Vitals"
-    )
+    private let emptySelectionImage: NSImage? = {
+        guard let baseSymbol = NSImage(
+            systemSymbolName: "gauge.with.needle",
+            accessibilityDescription: "Vitals"
+        ) else { return nil }
+
+        let configuration = NSImage.SymbolConfiguration(
+            pointSize: baseSymbol.size.height,
+            weight: .medium
+        )
+        let symbol = baseSymbol.withSymbolConfiguration(configuration) ?? baseSymbol
+        let downwardOffset: CGFloat = 0
+        let image = NSImage(size: symbol.size, flipped: false) { bounds in
+            symbol.draw(in: bounds.offsetBy(dx: 0, dy: -downwardOffset))
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }()
     private struct TitleState: Equatable {
         let cpu: Int?
         let memory: Int
