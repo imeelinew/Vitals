@@ -1,0 +1,19 @@
+{
+  "app": "DerivedData/Build/Products/Release/Vitals.app",
+  "bundle_id": "com.eli.Vitals",
+  "build": [
+    "xcodebuild",
+    "-project",
+    "Vitals.xcodeproj",
+    "-scheme",
+    "Vitals",
+    "-configuration",
+    "Release",
+    "-destination",
+    "generic/platform=macOS",
+    "-derivedDataPath",
+    "DerivedData",
+    "build"
+  ],
+  "output": "/Applications/Vitals.app"
+}
