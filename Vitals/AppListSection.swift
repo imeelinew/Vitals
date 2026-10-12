@@ -17,6 +17,8 @@ struct RunningAppInfo {
 }
 
 enum AppListSection {
+    static let finderBundleID = "com.apple.finder"
+
     private struct AppMemoryGroup {
         let pid: pid_t
         let name: String
@@ -44,7 +46,9 @@ enum AppListSection {
             let ownPid = ProcessInfo.processInfo.processIdentifier
             var groups: [AppMemoryGroup] = []
             for app in NSWorkspace.shared.runningApplications {
-                guard app.activationPolicy == .regular, app.processIdentifier != ownPid else { continue }
+                guard app.activationPolicy == .regular,
+                      app.processIdentifier != ownPid,
+                      app.bundleIdentifier != finderBundleID else { continue }
                 let pid = app.processIdentifier
                 groups.append(AppMemoryGroup(
                     pid: pid,
@@ -425,65 +429,11 @@ enum SafeAppPrefs {
 }
 
 private enum AppProcessTerminator {
-    private static let pathBufferSize: Int32 = 4_096
-
-    static func forceQuit(pid: pid_t) {
-        autoreleasepool {
-            guard let app = NSRunningApplication(processIdentifier: pid) else { return }
-            let bundlePath = app.bundleURL.map(canonicalPath)
-            var relatedPIDs = bundlePath.map(processesInsideBundle) ?? []
-            relatedPIDs.insert(pid)
-
-            _ = app.forceTerminate()
-
-            guard let bundlePath else { return }
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.75) {
-                autoreleasepool {
-                    killRemaining(relatedPIDs, insideBundle: bundlePath)
-                }
-            }
-        }
-    }
-
-    private static func processesInsideBundle(_ bundlePath: String) -> Set<pid_t> {
-        let bufferSize = proc_listpids(UInt32(PROC_ALL_PIDS), 0, nil, 0)
-        guard bufferSize > 0 else { return [] }
-
-        let count = Int(bufferSize) / MemoryLayout<pid_t>.size
-        var pids = [pid_t](repeating: 0, count: count)
-        let actualSize = proc_listpids(UInt32(PROC_ALL_PIDS), 0, &pids, bufferSize)
-        let actualCount = Int(actualSize) / MemoryLayout<pid_t>.size
-
-        var matches = Set<pid_t>()
-        for pid in pids.prefix(actualCount) where pid > 0 {
-            if executablePath(for: pid).map({ isInsideBundle($0, bundlePath: bundlePath) }) == true {
-                matches.insert(pid)
-            }
-        }
-        return matches
-    }
-
-    private static func killRemaining(_ pids: Set<pid_t>, insideBundle bundlePath: String) {
-        for pid in pids where pid > 0 {
-            guard let path = executablePath(for: pid), isInsideBundle(path, bundlePath: bundlePath) else {
-                continue
-            }
-            _ = Darwin.kill(pid, SIGKILL)
-        }
-    }
-
-    private static func executablePath(for pid: pid_t) -> String? {
-        var buffer = [CChar](repeating: 0, count: Int(pathBufferSize))
-        guard proc_pidpath(pid, &buffer, UInt32(pathBufferSize)) > 0 else { return nil }
-        return canonicalPath(URL(fileURLWithPath: String(cString: buffer)))
-    }
-
-    private static func canonicalPath(_ url: URL) -> String {
-        url.resolvingSymlinksInPath().standardizedFileURL.path
-    }
-
-    private static func isInsideBundle(_ executablePath: String, bundlePath: String) -> Bool {
-        executablePath.hasPrefix(bundlePath + "/")
+    static func requestQuit(pid: pid_t) {
+        guard let app = NSRunningApplication(processIdentifier: pid),
+              app.bundleIdentifier != AppListSection.finderBundleID else { return }
+        // A normal quit lets the application handle unsaved work or cancel quitting.
+        _ = app.terminate()
     }
 }
 
@@ -495,18 +445,23 @@ private enum RunningAppWindowCloser {
         return false
     }
 
-    static func closeAll() {
+    static func closeAll(excludingBundleIDs safeIDs: Set<String>, quittingPIDs: Set<pid_t>) {
         autoreleasepool {
-            closeAllRunningApplicationWindows()
+            closeAllRunningApplicationWindows(excludingBundleIDs: safeIDs, quittingPIDs: quittingPIDs)
         }
     }
 
-    private static func closeAllRunningApplicationWindows() {
+    private static func closeAllRunningApplicationWindows(excludingBundleIDs safeIDs: Set<String>, quittingPIDs: Set<pid_t>) {
         guard AXIsProcessTrusted() else { return }
 
         let ownPID = ProcessInfo.processInfo.processIdentifier
         for app in NSWorkspace.shared.runningApplications {
             guard app.processIdentifier != ownPID, app.activationPolicy != .prohibited else { continue }
+            // Leave save/cancel handling entirely to apps already asked to quit.
+            guard !quittingPIDs.contains(app.processIdentifier) else { continue }
+            if let bundleID = app.bundleIdentifier,
+               bundleID != AppListSection.finderBundleID,
+               safeIDs.contains(bundleID) { continue }
             closeWindows(of: app.processIdentifier)
         }
     }
@@ -662,16 +617,15 @@ final class AppListView: NSView {
 
         let contentBottom = apps.isEmpty ? y + rowHeight : y - rowSpacing
         let safeY = contentBottom + 10
-        let quitY = apps.isEmpty ? safeY : safeY + buttonHeight + 6
-        let quitAllY = apps.isEmpty ? quitY : quitY + buttonHeight + 6
+        let quitY = safeY + buttonHeight + 6
+        let quitAllY = apps.isEmpty ? safeY : quitY + buttonHeight + 6
         let showsButtons = !apps.isEmpty
         safeZoneButton.isHidden = !showsButtons
         quitButton.isHidden = !showsButtons
-        quitAllButton.isHidden = !showsButtons
         safeZoneButton.frame = showsButtons ? NSRect(x: margin, y: safeY, width: contentWidth, height: buttonHeight) : .zero
         quitButton.frame = showsButtons ? NSRect(x: margin, y: quitY, width: contentWidth, height: buttonHeight) : .zero
-        quitAllButton.frame = showsButtons ? NSRect(x: margin, y: quitAllY, width: contentWidth, height: buttonHeight) : .zero
-        let totalHeight = apps.isEmpty ? contentBottom + 10 : quitAllY + buttonHeight + 10
+        quitAllButton.frame = NSRect(x: margin, y: quitAllY, width: contentWidth, height: buttonHeight)
+        let totalHeight = quitAllY + buttonHeight + 10
         frame = NSRect(x: 0, y: 0, width: margin * 2 + contentWidth, height: totalHeight)
         updateButtons()
     }
@@ -855,6 +809,11 @@ final class AppListView: NSView {
         return hasSelection
     }
 
+    private var canClearWorkspace: Bool {
+        rows.contains { !$0.isSafe }
+            || !NSRunningApplication.runningApplications(withBundleIdentifier: AppListSection.finderBundleID).isEmpty
+    }
+
     private func updateButtons() {
         var selectedCount = 0
         var hasSelectedSafeApp = false
@@ -886,7 +845,7 @@ final class AppListView: NSView {
         quitButton.isEnabled = selectedCount > 0 && !hasSelectedSafeApp
 
         quitAllButton.title = "清空工作区"
-        quitAllButton.isEnabled = rows.contains { !$0.isSafe }
+        quitAllButton.isEnabled = canClearWorkspace
         quitAllButton.hasDestructiveAction = false
     }
 
@@ -894,7 +853,7 @@ final class AppListView: NSView {
         guard canQuitSelected else { return }
         let pids = rows.lazy.filter(\.isSelected).map(\.pid)
         for pid in pids {
-            AppProcessTerminator.forceQuit(pid: pid)
+            AppProcessTerminator.requestQuit(pid: pid)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.refresh()
@@ -902,7 +861,7 @@ final class AppListView: NSView {
     }
 
     @objc private func quitAllButtonPressed() {
-        guard rows.contains(where: { !$0.isSafe }),
+        guard canClearWorkspace,
               quitAllButton.consumeConfirmation() else { return }
         quitAllUnsafeApps()
     }
@@ -910,11 +869,12 @@ final class AppListView: NSView {
     private func quitAllUnsafeApps() {
         guard RunningAppWindowCloser.requestAccessIfNeeded() else { return }
 
-        let pids = rows.lazy.filter { !$0.isSafe }.map(\.pid)
+        let safeIDs = SafeAppPrefs.bundleIDs()
+        let pids = Set(rows.lazy.filter { !$0.isSafe }.map(\.pid))
         for pid in pids {
-            AppProcessTerminator.forceQuit(pid: pid)
+            AppProcessTerminator.requestQuit(pid: pid)
         }
-        RunningAppWindowCloser.closeAll()
+        RunningAppWindowCloser.closeAll(excludingBundleIDs: safeIDs, quittingPIDs: pids)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.refresh()
         }

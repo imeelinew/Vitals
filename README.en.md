@@ -45,9 +45,9 @@ It stays intentionally light: the menu UI is drawn with native AppKit, avoiding 
 Activity Monitor is complete, but heavy for “glance at resources, quit a few apps.” Vitals puts the common actions in the menu bar: status at a glance, apps sorted by memory, and a safe zone that never gets cleared by bulk quit.
 
 - **Menu bar first**: CPU, memory usage, and memory pressure sit at the top of the panel.
-- **Memory-sorted app list**: see regular running apps with icons and footprints.
-- **Safe zone**: protect apps you do not want bulk-quit to touch.
-- **Clear workspace**: press and hold to quit unprotected apps and free memory and desktop space.
+- **Memory-sorted app list**: see regular running apps with icons and footprints; Finder is excluded.
+- **Safe zone**: keep protected apps and their windows untouched when clearing the workspace.
+- **Clear workspace**: press and hold to request a normal quit for unprotected apps and close Finder windows; apps can prompt to save or cancel quitting.
 - **Lightweight always-on**: sampling and UI are constrained for a low physical footprint while staying in the menu bar.
 
 ## Menu Bar
