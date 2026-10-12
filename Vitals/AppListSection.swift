@@ -615,19 +615,21 @@ final class AppListView: NSView {
             appendRows(safe, isSafe: true, y: &y)
         }
 
-        let contentBottom = apps.isEmpty ? y + rowHeight : y - rowSpacing
-        let safeY = contentBottom + 10
-        let quitY = safeY + buttonHeight + 6
-        let quitAllY = apps.isEmpty ? safeY : quitY + buttonHeight + 6
-        let showsButtons = !apps.isEmpty
-        safeZoneButton.isHidden = !showsButtons
-        quitButton.isHidden = !showsButtons
-        safeZoneButton.frame = showsButtons ? NSRect(x: margin, y: safeY, width: contentWidth, height: buttonHeight) : .zero
-        quitButton.frame = showsButtons ? NSRect(x: margin, y: quitY, width: contentWidth, height: buttonHeight) : .zero
-        quitAllButton.frame = NSRect(x: margin, y: quitAllY, width: contentWidth, height: buttonHeight)
-        let totalHeight = quitAllY + buttonHeight + 10
-        frame = NSRect(x: 0, y: 0, width: margin * 2 + contentWidth, height: totalHeight)
         updateButtons()
+    }
+
+    private func layoutButtons() {
+        let contentBottom = rows.last?.frame.maxY ?? (titleY + titleHeight + 6 + rowHeight)
+        var y = contentBottom + 10
+        for button in [safeZoneButton, quitButton, quitAllButton] {
+            guard !button.isHidden else {
+                button.frame = .zero
+                continue
+            }
+            button.frame = NSRect(x: margin, y: y, width: contentWidth, height: buttonHeight)
+            y += buttonHeight + 6
+        }
+        setFrameSize(NSSize(width: margin * 2 + contentWidth, height: y - 6 + 10))
     }
 
     private func appendRows(_ infos: [(RunningAppInfo, String?, NSImage?)], isSafe: Bool, y: inout CGFloat) {
@@ -840,13 +842,16 @@ final class AppListView: NSView {
             safeZoneButton.title = "切换安全区"
         }
         safeZoneButton.isEnabled = safeEligibleCount > 0
+        safeZoneButton.isHidden = !safeZoneButton.isEnabled
 
         quitButton.title = "退出应用"
         quitButton.isEnabled = selectedCount > 0 && !hasSelectedSafeApp
+        quitButton.isHidden = !quitButton.isEnabled
 
         quitAllButton.title = "清空工作区"
         quitAllButton.isEnabled = canClearWorkspace
         quitAllButton.hasDestructiveAction = false
+        layoutButtons()
     }
 
     @objc private func quitSelected() {

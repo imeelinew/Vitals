@@ -16,51 +16,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var launchAtLoginItem: NSMenuItem?
     private var checkForUpdatesItem: NSMenuItem?
 
-    private let titleAttr = NSMutableAttributedString()
-    private let titleFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-    private let emptySelectionImage: NSImage? = {
-        guard let baseSymbol = NSImage(
-            systemSymbolName: "gauge.with.needle",
-            accessibilityDescription: "Vitals"
-        ) else { return nil }
-
-        let configuration = NSImage.SymbolConfiguration(
-            pointSize: baseSymbol.size.height,
-            weight: .medium
-        )
-        let symbol = baseSymbol.withSymbolConfiguration(configuration) ?? baseSymbol
-        let downwardOffset: CGFloat = 0
-        let image = NSImage(size: symbol.size, flipped: false) { bounds in
-            symbol.draw(in: bounds.offsetBy(dx: 0, dy: -downwardOffset))
-            return true
-        }
-        image.isTemplate = true
-        return image
-    }()
-    private struct TitleState: Equatable {
-        let cpu: Int?
-        let memory: Int
-        let pressure: Int
-        let enabledMask: UInt8
-    }
-
-    private var lastTitleState: TitleState?
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard acquireInstanceLock() else {
             NSApp.terminate(nil)
             return
         }
 
-        MenuBarPrefs.ensureDefaults()
         ensureInitialLaunchAtLogin()
         migrateLaunchAtLoginIfNeeded()
 
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "CPU --% · MEM --%"
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let symbol = NSImage(systemSymbolName: "gauge.with.needle", accessibilityDescription: "Vitals")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 16, weight: .medium))
+        symbol?.isTemplate = true
+        statusItem.button?.image = symbol
+        statusItem.button?.imagePosition = .imageOnly
 
         collector.onUpdate = { [weak self] in
-            self?.refreshUI()
+            self?.panel?.refresh()
         }
         collector.start()
         buildMenu()
@@ -113,63 +86,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func refreshUI() {
-        renderTitle()
-        panel?.refresh()
-    }
-
-    private func renderTitle() {
-        let cpu = collector.hasCPUSample ? Int(collector.cpuUsage.rounded()) : nil
-        let memory = Int(collector.memoryUsage.rounded())
-        let cpuEnabled = MenuBarPrefs.isEnabled(.cpu)
-        let memoryEnabled = MenuBarPrefs.isEnabled(.memory)
-        let pressureEnabled = MenuBarPrefs.isEnabled(.pressure)
-        let enabledMask: UInt8 = (cpuEnabled ? 1 : 0) | (memoryEnabled ? 2 : 0) | (pressureEnabled ? 4 : 0)
-        let state = TitleState(
-            cpu: cpuEnabled ? cpu : nil,
-            memory: memoryEnabled ? memory : 0,
-            pressure: pressureEnabled ? collector.pressure.rawValue : 0,
-            enabledMask: enabledMask
-        )
-        if state == lastTitleState { return }
-        lastTitleState = state
-
-        let cpuText = cpu.map { "\($0)%" } ?? "--%"
-        let memText = "\(memory)%"
-
-        titleAttr.beginEditing()
-        titleAttr.deleteCharacters(in: NSRange(location: 0, length: titleAttr.length))
-
-        if cpuEnabled { appendTitle("CPU \(cpuText)") }
-        if memoryEnabled {
-            if titleAttr.length > 0 { appendTitle(" · ") }
-            appendTitle("MEM \(memText)")
-        }
-        if pressureEnabled {
-            if titleAttr.length > 0 { appendTitle(" · ") }
-            appendTitle("●", color: collector.pressure.color)
-        }
-
-        titleAttr.endEditing()
-
-        if titleAttr.length == 0 {
-            statusItem.button?.title = ""
-            statusItem.button?.image = emptySelectionImage
-            statusItem.button?.imagePosition = .imageOnly
-        } else {
-            statusItem.button?.image = nil
-            statusItem.button?.imagePosition = .noImage
-            statusItem.button?.attributedTitle = titleAttr
-        }
-    }
-
-    private func appendTitle(_ text: String, color: NSColor = .labelColor) {
-        titleAttr.append(NSAttributedString(string: text, attributes: [
-            .font: titleFont,
-            .foregroundColor: color
-        ]))
-    }
-
     private func buildMenu() {
         let menu = NSMenu()
         menu.delegate = self
@@ -183,16 +99,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appListItem = NSMenuItem()
         menu.addItem(appListItem)
         self.appListItem = appListItem
-
-        menu.addItem(.separator())
-
-        for item in MenuBarItem.allCases {
-            let mi = NSMenuItem(title: item.label, action: #selector(toggleItem(_:)), keyEquivalent: "")
-            mi.target = self
-            mi.state = MenuBarPrefs.isEnabled(item) ? .on : .off
-            mi.representedObject = item.rawValue
-            menu.addItem(mi)
-        }
 
         menu.addItem(.separator())
 
@@ -212,16 +118,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(quitItem)
 
         statusItem.menu = menu
-    }
-
-    @objc private func toggleItem(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String,
-              let item = MenuBarItem(rawValue: raw) else { return }
-        let next = sender.state != .on
-        MenuBarPrefs.setEnabled(item, next)
-        sender.state = next ? .on : .off
-        lastTitleState = nil
-        renderTitle()
     }
 
     @objc private func toggleLaunchAtLogin() {
