@@ -1,17 +1,15 @@
 import AppKit
 
 final class StatusPanelView: NSView {
-    private weak var collector: MetricsCollector?
-    private let titleFont = NSFont.systemFont(ofSize: 12, weight: .regular)
-    private let valueFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+    private let collector: MetricsCollector
     private let contentWidth: CGFloat = 196
     private let contentX: CGFloat = 12
-    private lazy var titleAttributes: [NSAttributedString.Key: Any] = [
-        .font: titleFont,
+    private let titleAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: 12),
         .foregroundColor: NSColor.labelColor
     ]
-    private lazy var valueAttributes: [NSAttributedString.Key: Any] = [
-        .font: valueFont,
+    private let valueAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
         .foregroundColor: NSColor.labelColor
     ]
 
@@ -24,14 +22,8 @@ final class StatusPanelView: NSView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func refresh() {
-        needsDisplay = true
-    }
-
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        guard let collector else { return }
-
         drawMetric(
             title: "CPU",
             value: collector.hasCPUSample ? "\(Int(collector.cpuUsage.rounded()))%" : "--",

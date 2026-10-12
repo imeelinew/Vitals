@@ -9,10 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let collector = MetricsCollector()
     private let updateService = UpdateService()
-    private var panel: StatusPanelView?
-    private var appListView: AppListView?
-    private var panelMenuItem: NSMenuItem?
-    private var appListItem: NSMenuItem?
+    private let panelMenuItem = NSMenuItem()
+    private let appListItem = NSMenuItem()
     private var launchAtLoginItem: NSMenuItem?
     private var checkForUpdatesItem: NSMenuItem?
 
@@ -33,7 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.imagePosition = .imageOnly
 
         collector.onUpdate = { [weak self] in
-            self?.panel?.refresh()
+            self?.panelMenuItem.view?.needsDisplay = true
         }
         collector.start()
         buildMenu()
@@ -90,15 +88,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.delegate = self
 
-        let panelItem = NSMenuItem()
-        menu.addItem(panelItem)
-        self.panelMenuItem = panelItem
-
+        menu.addItem(panelMenuItem)
         menu.addItem(.separator())
-
-        let appListItem = NSMenuItem()
         menu.addItem(appListItem)
-        self.appListItem = appListItem
 
         menu.addItem(.separator())
 
@@ -146,29 +138,20 @@ extension AppDelegate: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         collector.sampleOnce()
 
-        if panel == nil, let pmItem = panelMenuItem {
-            let p = StatusPanelView(collector: collector)
-            pmItem.view = p
-            self.panel = p
-        }
-        panel?.refresh()
+        panelMenuItem.view = panelMenuItem.view ?? StatusPanelView(collector: collector)
+        panelMenuItem.view?.needsDisplay = true
 
-        if appListView == nil, let alItem = appListItem {
-            let alv = AppListView()
-            alItem.view = alv
-            self.appListView = alv
-        }
-        appListView?.refresh()
+        let appList = appListItem.view as? AppListView ?? AppListView()
+        appListItem.view = appList
+        appList.refresh()
 
         launchAtLoginItem?.state = LaunchAtLogin.isEnabled ? .on : .off
         checkForUpdatesItem?.isEnabled = updateService.canCheckForUpdates
     }
 
     func menuDidClose(_ menu: NSMenu) {
-        panelMenuItem?.view = nil
-        appListItem?.view = nil
-        panel = nil
-        appListView = nil
+        panelMenuItem.view = nil
+        appListItem.view = nil
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             malloc_zone_pressure_relief(nil, 0)

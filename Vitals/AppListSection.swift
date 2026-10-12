@@ -5,7 +5,9 @@ import Darwin
 struct RunningAppInfo {
     let pid: pid_t
     let name: String
-    let memoryBytes: UInt64
+    let bundleIdentifier: String?
+    let bundleURL: URL?
+    var memoryBytes: UInt64 = 0
 
     var memoryText: String {
         let mb = Double(memoryBytes) / 1_048_576
@@ -18,14 +20,6 @@ struct RunningAppInfo {
 
 enum AppListSection {
     static let finderBundleID = "com.apple.finder"
-
-    private struct AppMemoryGroup {
-        let pid: pid_t
-        let name: String
-        let bundlePath: String?
-        let coalitionID: UInt64?
-        var memoryBytes: UInt64 = 0
-    }
 
     // PROC_PIDCOALITIONINFO is the Darwin proc_pidinfo flavor used by XNU, but
     // its declaration lives in Apple's private proc_info header. Keep the
@@ -53,28 +47,20 @@ enum AppListSection {
 
     static func collectAll() -> [RunningAppInfo] {
         autoreleasepool {
-            var groups: [AppMemoryGroup] = []
-            for app in runningApplications() {
-                let pid = app.processIdentifier
-                groups.append(AppMemoryGroup(
-                    pid: pid,
-                    name: app.localizedName ?? app.bundleIdentifier ?? "PID \(pid)",
-                    bundlePath: app.bundleURL?.path,
-                    coalitionID: resourceCoalitionID(for: pid)
-                ))
+            var apps = runningApplications().map {
+                RunningAppInfo(
+                    pid: $0.processIdentifier,
+                    name: $0.localizedName ?? $0.bundleIdentifier ?? "PID \($0.processIdentifier)",
+                    bundleIdentifier: $0.bundleIdentifier,
+                    bundleURL: $0.bundleURL
+                )
             }
-
-            aggregateMemory(into: &groups)
-
-            var infos = groups.map {
-                RunningAppInfo(pid: $0.pid, name: $0.name, memoryBytes: $0.memoryBytes)
-            }
-            infos.sort { $0.memoryBytes > $1.memoryBytes }
-            return infos
+            aggregateMemory(into: &apps)
+            return apps.sorted { $0.memoryBytes > $1.memoryBytes }
         }
     }
 
-    private static func aggregateMemory(into groups: inout [AppMemoryGroup]) {
+    private static func aggregateMemory(into groups: inout [RunningAppInfo]) {
         guard !groups.isEmpty else { return }
 
         var coalitionOwners: [UInt64: Int] = [:]
@@ -82,7 +68,7 @@ enum AppListSection {
         var bundleOwners: [String: Int] = [:]
 
         for index in groups.indices {
-            if let coalitionID = groups[index].coalitionID, coalitionID != 0 {
+            if let coalitionID = resourceCoalitionID(for: groups[index].pid) {
                 if coalitionOwners[coalitionID] == nil, !ambiguousCoalitions.contains(coalitionID) {
                     coalitionOwners[coalitionID] = index
                 } else {
@@ -90,7 +76,7 @@ enum AppListSection {
                     ambiguousCoalitions.insert(coalitionID)
                 }
             }
-            if let bundlePath = groups[index].bundlePath {
+            if let bundlePath = groups[index].bundleURL?.path {
                 bundleOwners[bundlePath] = index
             }
         }
@@ -134,7 +120,7 @@ enum AppListSection {
         }
     }
 
-    private static func sampleMainProcesses(into groups: inout [AppMemoryGroup]) {
+    private static func sampleMainProcesses(into groups: inout [RunningAppInfo]) {
         for index in groups.indices {
             groups[index].memoryBytes = memoryBytes(for: groups[index].pid)
         }
@@ -254,7 +240,6 @@ private final class HoldDangerButton: DestructiveButton {
     ]
 
     private var holdProgress: CGFloat = 0
-    private var isHolding = false
     private var hasConfirmation = false
     private var retractionTimer: Timer?
 
@@ -267,7 +252,6 @@ private final class HoldDangerButton: DestructiveButton {
         stopRetraction()
         holdProgress = 0
         hasConfirmation = false
-        isHolding = true
         setHoldProgress(Self.initialProgress)
 
         let startedAt = DispatchTime.now().uptimeNanoseconds
@@ -289,13 +273,11 @@ private final class HoldDangerButton: DestructiveButton {
 
                 if holdProgress >= 1 {
                     didTrigger = true
-                    // Finish and flush the confirmation animation before any
-                    // potentially slow application termination work begins.
-                    commitFullProgress(in: trackingWindow)
+                    // Draw confirmation before requesting application termination.
+                    trackingWindow.displayIfNeeded()
                     hasConfirmation = true
-                    if !sendAction(action, to: target) {
-                        hasConfirmation = false
-                    }
+                    sendAction(action, to: target)
+                    hasConfirmation = false
                 }
             }
 
@@ -323,7 +305,6 @@ private final class HoldDangerButton: DestructiveButton {
             }
         }
 
-        isHolding = false
         if wasCancelled {
             resetVisualState()
         } else {
@@ -332,13 +313,12 @@ private final class HoldDangerButton: DestructiveButton {
     }
 
     func consumeConfirmation() -> Bool {
-        guard hasConfirmation else { return false }
-        hasConfirmation = false
-        return true
+        defer { hasConfirmation = false }
+        return hasConfirmation
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard isHolding || holdProgress > 0 else {
+        guard holdProgress > 0 else {
             super.draw(dirtyRect)
             return
         }
@@ -355,7 +335,7 @@ private final class HoldDangerButton: DestructiveButton {
         let progressRect = NSRect(
             x: buttonRect.minX,
             y: buttonRect.minY,
-            width: buttonRect.width * min(holdProgress, 1),
+            width: buttonRect.width * holdProgress,
             height: buttonRect.height
         )
         NSGraphicsContext.saveGraphicsState()
@@ -391,14 +371,6 @@ private final class HoldDangerButton: DestructiveButton {
         holdProgress = clamped
         needsDisplay = true
         displayIfNeeded()
-    }
-
-    private func commitFullProgress(in trackingWindow: NSWindow) {
-        holdProgress = 1
-        needsDisplay = true
-        displayIfNeeded()
-        trackingWindow.displayIfNeeded()
-        trackingWindow.flushIfNeeded()
     }
 
     private func startRetraction() {
@@ -437,7 +409,6 @@ private final class HoldDangerButton: DestructiveButton {
 
     private func resetVisualState() {
         stopRetraction()
-        isHolding = false
         holdProgress = 0
         hasConfirmation = false
         needsDisplay = true
@@ -535,13 +506,8 @@ final class AppListView: NSView {
         var isSelected: Bool
     }
 
-    private struct SectionHeader {
-        let title: String
-        let frame: NSRect
-    }
-
     private var rows: [Row] = []
-    private var sectionHeaders: [SectionHeader] = []
+    private var safeHeaderFrame: NSRect?
     private var anchorIdx: Int?
     private var dragStartIdx: Int?
     private var dragLastIdx: Int?
@@ -593,6 +559,8 @@ final class AppListView: NSView {
         configureButton(safeZoneButton, action: #selector(toggleSelectedSafeZone))
         configureButton(quitButton, action: #selector(quitSelected))
         configureButton(quitAllButton, action: #selector(quitAllButtonPressed))
+        quitButton.title = "退出应用"
+        quitAllButton.title = "清空工作区"
         quitAllButton.isProminent = true
     }
 
@@ -643,26 +611,23 @@ final class AppListView: NSView {
     private func rebuildRows(from apps: [RunningAppInfo]) {
         let selectedPIDs = Set(rows.lazy.filter(\.isSelected).map(\.pid))
         rows.removeAll(keepingCapacity: true)
-        sectionHeaders.removeAll(keepingCapacity: true)
+        safeHeaderFrame = nil
         anchorIdx = nil
         dragStartIdx = nil
         dragLastIdx = nil
         dragStartPoint = nil
         dragDidMove = false
         let safeIDs = SafeAppPrefs.bundleIDs()
-        var normal: [(RunningAppInfo, String?, NSImage?)] = []
-        var safe: [(RunningAppInfo, String?, NSImage?)] = []
+        var normal: [RunningAppInfo] = []
+        var safe: [RunningAppInfo] = []
         normal.reserveCapacity(apps.count)
         safe.reserveCapacity(safeIDs.count)
 
         for info in apps {
-            let app = NSRunningApplication(processIdentifier: info.pid)
-            let bundleID = app?.bundleIdentifier
-            let icon = AppIcon.downsampled(for: app?.bundleURL)
-            if let bundleID, safeIDs.contains(bundleID) {
-                safe.append((info, bundleID, icon))
+            if let bundleID = info.bundleIdentifier, safeIDs.contains(bundleID) {
+                safe.append(info)
             } else {
-                normal.append((info, bundleID, icon))
+                normal.append(info)
             }
         }
 
@@ -671,15 +636,13 @@ final class AppListView: NSView {
 
         if !safe.isEmpty {
             if !normal.isEmpty { y += sectionSpacing - rowSpacing }
-            sectionHeaders.append(SectionHeader(
-                title: "安全区",
-                frame: NSRect(x: margin, y: y, width: contentWidth, height: sectionHeaderHeight)
-            ))
+            safeHeaderFrame = NSRect(x: margin, y: y, width: contentWidth, height: sectionHeaderHeight)
             y += sectionHeaderHeight + 4
             appendRows(safe, isSafe: true, selectedPIDs: selectedPIDs, y: &y)
         }
 
         updateButtons()
+        layoutButtons()
     }
 
     private func layoutButtons() {
@@ -693,15 +656,15 @@ final class AppListView: NSView {
         setFrameSize(NSSize(width: margin * 2 + contentWidth, height: clearY + clearButtonHeight + 10))
     }
 
-    private func appendRows(_ infos: [(RunningAppInfo, String?, NSImage?)], isSafe: Bool, selectedPIDs: Set<pid_t> = [], y: inout CGFloat) {
-        for (info, bundleID, icon) in infos {
+    private func appendRows(_ infos: [RunningAppInfo], isSafe: Bool, selectedPIDs: Set<pid_t>, y: inout CGFloat) {
+        for info in infos {
             rows.append(Row(
                 frame: NSRect(x: margin, y: y, width: contentWidth, height: rowHeight),
                 pid: info.pid,
-                icon: icon,
+                icon: AppIcon.downsampled(for: info.bundleURL),
                 name: info.name,
                 memoryText: info.memoryText,
-                bundleIdentifier: bundleID,
+                bundleIdentifier: info.bundleIdentifier,
                 isSafe: isSafe,
                 isSelected: selectedPIDs.contains(info.pid)
             ))
@@ -724,10 +687,10 @@ final class AppListView: NSView {
             return
         }
 
-        for header in sectionHeaders {
-            (header.title as NSString).draw(in: header.frame, withAttributes: secondaryAttributes)
+        if let frame = safeHeaderFrame {
+            ("安全区" as NSString).draw(in: frame, withAttributes: secondaryAttributes)
             NSColor.separatorColor.setFill()
-            NSRect(x: margin + 48, y: header.frame.midY, width: contentWidth - 48, height: 1).fill()
+            NSRect(x: margin + 48, y: frame.midY, width: contentWidth - 48, height: 1).fill()
         }
 
         for row in rows where dirtyRect.intersects(row.frame) {
@@ -852,24 +815,16 @@ final class AppListView: NSView {
 
     private func toggleSafeZone(at location: NSPoint) -> Bool {
         guard let index = rowIndex(at: location), let bundleID = rows[index].bundleIdentifier else { return false }
-        var ids = SafeAppPrefs.bundleIDs()
-        if rows[index].isSafe {
-            ids.remove(bundleID)
-        } else {
-            ids.insert(bundleID)
-        }
-        SafeAppPrefs.setBundleIDs(ids)
+        SafeAppPrefs.setBundleIDs(SafeAppPrefs.bundleIDs().symmetricDifference([bundleID]))
         refresh()
         return true
     }
 
+    private var selectedRows: [Row] { rows.filter(\.isSelected) }
+
     private var canQuitSelected: Bool {
-        var hasSelection = false
-        for row in rows where row.isSelected {
-            if row.isSafe { return false }
-            hasSelection = true
-        }
-        return hasSelection
+        let selected = selectedRows
+        return !selected.isEmpty && !selected.contains(where: \.isSafe)
     }
 
     private var canClearWorkspace: Bool {
@@ -878,39 +833,19 @@ final class AppListView: NSView {
     }
 
     private func updateButtons() {
-        var selectedCount = 0
-        var hasSelectedSafeApp = false
-        var safeEligibleCount = 0
-        var allEligibleSafe = true
-        var allEligibleUnsafe = true
-
-        for row in rows where row.isSelected {
-            selectedCount += 1
-            hasSelectedSafeApp = hasSelectedSafeApp || row.isSafe
-            guard row.bundleIdentifier != nil else { continue }
-            safeEligibleCount += 1
-            allEligibleSafe = allEligibleSafe && row.isSafe
-            allEligibleUnsafe = allEligibleUnsafe && !row.isSafe
-        }
-
-        if safeEligibleCount == 0 {
+        let eligible = selectedRows.filter { $0.bundleIdentifier != nil }
+        if eligible.isEmpty {
             safeZoneButton.title = "安全区"
-        } else if allEligibleSafe {
+        } else if eligible.allSatisfy(\.isSafe) {
             safeZoneButton.title = "移出安全区"
-        } else if allEligibleUnsafe {
+        } else if eligible.allSatisfy({ !$0.isSafe }) {
             safeZoneButton.title = "移入安全区"
         } else {
             safeZoneButton.title = "切换安全区"
         }
-        safeZoneButton.isEnabled = safeEligibleCount > 0
-
-        quitButton.title = "退出应用"
-        quitButton.isEnabled = selectedCount > 0 && !hasSelectedSafeApp
-
-        quitAllButton.title = "清空工作区"
+        safeZoneButton.isEnabled = !eligible.isEmpty
+        quitButton.isEnabled = canQuitSelected
         quitAllButton.isEnabled = canClearWorkspace
-        quitAllButton.hasDestructiveAction = false
-        layoutButtons()
     }
 
     @objc private func quitSelected() {
@@ -922,13 +857,8 @@ final class AppListView: NSView {
     }
 
     @objc private func quitAllButtonPressed() {
-        guard canClearWorkspace,
-              quitAllButton.consumeConfirmation() else { return }
-        quitAllUnsafeApps()
-    }
-
-    private func quitAllUnsafeApps() {
-        guard RunningAppWindowCloser.requestAccessIfNeeded() else { return }
+        guard quitAllButton.consumeConfirmation(),
+              RunningAppWindowCloser.requestAccessIfNeeded() else { return }
 
         let safeIDs = SafeAppPrefs.bundleIDs()
         let pids = Set(rows.lazy.filter { !$0.isSafe }.map(\.pid))
@@ -939,25 +869,8 @@ final class AppListView: NSView {
     }
 
     @objc private func toggleSelectedSafeZone() {
-        let selected = rows.filter { $0.isSelected && $0.bundleIdentifier != nil }
-        guard !selected.isEmpty else { return }
-
-        var ids = SafeAppPrefs.bundleIDs()
-        if selected.allSatisfy(\.isSafe) {
-            for row in selected {
-                if let bundleID = row.bundleIdentifier { ids.remove(bundleID) }
-            }
-        } else if selected.allSatisfy({ !$0.isSafe }) {
-            for row in selected {
-                if let bundleID = row.bundleIdentifier { ids.insert(bundleID) }
-            }
-        } else {
-            for row in selected {
-                guard let bundleID = row.bundleIdentifier else { continue }
-                if row.isSafe { ids.remove(bundleID) } else { ids.insert(bundleID) }
-            }
-        }
-        SafeAppPrefs.setBundleIDs(ids)
+        let bundleIDs = Set(selectedRows.compactMap(\.bundleIdentifier))
+        SafeAppPrefs.setBundleIDs(SafeAppPrefs.bundleIDs().symmetricDifference(bundleIDs))
         refresh()
     }
 }

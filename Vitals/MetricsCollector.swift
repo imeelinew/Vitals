@@ -17,30 +17,19 @@ final class MetricsCollector {
 
     func start() {
         pressureMonitor.start { [weak self] state in
-            guard let self else { return }
-            self.pressure = state
-            DispatchQueue.main.async {
-                self.onUpdate?()
-            }
+            self?.pressure = state
+            self?.onUpdate?()
         }
 
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now(), repeating: 5.0)
-        t.setEventHandler { [weak self] in
-            autoreleasepool {
-                self?.tick()
-            }
-        }
+        t.setEventHandler { [weak self] in self?.tick() }
         t.resume()
         timer = t
     }
 
     func sampleOnce() {
-        queue.async { [weak self] in
-            autoreleasepool {
-                self?.tick()
-            }
-        }
+        queue.async { [weak self] in self?.tick() }
     }
 
     private func tick() {
@@ -54,9 +43,7 @@ final class MetricsCollector {
                 self.cpuUsage = cpuVal
             }
             self.memoryUsage = memPercent
-            if reconciledPressure != self.pressure {
-                self.pressure = reconciledPressure
-            }
+            self.pressure = reconciledPressure
             self.onUpdate?()
         }
     }

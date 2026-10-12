@@ -18,17 +18,15 @@ enum MemoryPressureState: Int {
 
 final class MemoryPressureMonitor {
     private var source: DispatchSourceMemoryPressure?
-    private var handler: ((MemoryPressureState) -> Void)?
 
     func start(onChange: @escaping (MemoryPressureState) -> Void) {
-        self.handler = onChange
         onChange(currentLevel())
 
         let src = DispatchSource.makeMemoryPressureSource(
             eventMask: [.warning, .critical, .normal],
             queue: .main
         )
-        src.setEventHandler { [weak self] in
+        src.setEventHandler {
             let data = src.data
             let state: MemoryPressureState
             if data.contains(.critical) {
@@ -38,7 +36,7 @@ final class MemoryPressureMonitor {
             } else {
                 state = .normal
             }
-            self?.handler?(state)
+            onChange(state)
         }
         src.resume()
         self.source = src
