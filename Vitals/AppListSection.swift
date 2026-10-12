@@ -41,14 +41,20 @@ enum AppListSection {
     private static let procPIDCoalitionInfo: Int32 = 20
     private static let processPathBufferSize: UInt32 = 4_096
 
+    static func runningApplications() -> [NSRunningApplication] {
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        return NSWorkspace.shared.runningApplications.filter {
+            $0.activationPolicy == .regular
+                && $0.processIdentifier != ownPID
+                && $0.bundleIdentifier != finderBundleID
+                && !$0.isTerminated
+        }
+    }
+
     static func collectAll() -> [RunningAppInfo] {
         autoreleasepool {
-            let ownPid = ProcessInfo.processInfo.processIdentifier
             var groups: [AppMemoryGroup] = []
-            for app in NSWorkspace.shared.runningApplications {
-                guard app.activationPolicy == .regular,
-                      app.processIdentifier != ownPid,
-                      app.bundleIdentifier != finderBundleID else { continue }
+            for app in runningApplications() {
                 let pid = app.processIdentifier
                 groups.append(AppMemoryGroup(
                     pid: pid,
@@ -204,7 +210,35 @@ private enum AppIcon {
     }
 }
 
-private final class HoldDangerButton: NSButton {
+private class DestructiveButton: NSButton {
+    var isProminent = false
+
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6)
+        let fillOpacity: CGFloat = (isProminent ? 0.14 : 0.06) + (isHighlighted ? 0.04 : 0)
+        let color = isEnabled ? NSColor.systemRed : NSColor.disabledControlTextColor
+        color.withAlphaComponent(fillOpacity).setFill()
+        path.fill()
+        color.withAlphaComponent(isProminent ? 0.38 : 0.16).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font ?? NSFont.systemFont(ofSize: 11, weight: .medium),
+            .foregroundColor: isEnabled
+                ? NSColor.systemRed.withAlphaComponent(isProminent ? 1 : 0.8)
+                : NSColor.disabledControlTextColor
+        ]
+        let text = title as NSString
+        let size = text.size(withAttributes: attributes)
+        text.draw(
+            at: NSPoint(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2),
+            withAttributes: attributes
+        )
+    }
+}
+
+private final class HoldDangerButton: DestructiveButton {
     private static let holdDuration: Double = 1.2
     private static let frameInterval: TimeInterval = 1.0 / 60.0
     private static let retractionDuration: Double = 0.22
@@ -514,8 +548,9 @@ final class AppListView: NSView {
     private var dragStartPoint: NSPoint?
     private var dragDidMove = false
     private var dragStartSelected = false
+    private var runningAppsTimer: Timer?
     private let safeZoneButton = NSButton()
-    private let quitButton = NSButton()
+    private let quitButton = DestructiveButton()
     private let quitAllButton = HoldDangerButton()
 
     private let margin: CGFloat = 12
@@ -530,7 +565,9 @@ final class AppListView: NSView {
     private let checkboxSize: CGFloat = 12
     private let iconSize: CGFloat = 16
     private let iconGap: CGFloat = 4
-    private let buttonHeight: CGFloat = 22
+    private let buttonHeight: CGFloat = 26
+    private let clearButtonHeight: CGFloat = 32
+    private let buttonGap: CGFloat = 6
 
     private let titleAttributes: [NSAttributedString.Key: Any] = [
         .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
@@ -556,12 +593,38 @@ final class AppListView: NSView {
         configureButton(safeZoneButton, action: #selector(toggleSelectedSafeZone))
         configureButton(quitButton, action: #selector(quitSelected))
         configureButton(quitAllButton, action: #selector(quitAllButtonPressed))
+        quitAllButton.isProminent = true
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        runningAppsTimer?.invalidate()
+        runningAppsTimer = nil
+        guard window != nil else { return }
+
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.refreshIfRunningAppsChanged()
+        }
+        // Keep checking during menu tracking, when main-queue delays may not run.
+        RunLoop.main.add(timer, forMode: .common)
+        runningAppsTimer = timer
+    }
+
+    deinit {
+        runningAppsTimer?.invalidate()
+    }
+
+    private func refreshIfRunningAppsChanged() {
+        let runningPIDs = Set(AppListSection.runningApplications().map(\.processIdentifier))
+        guard runningPIDs != Set(rows.map(\.pid)) else { return }
+        refresh()
+    }
+
     private func configureButton(_ button: NSButton, action: Selector) {
-        button.bezelStyle = .rounded
+        button.bezelStyle = .flexiblePush
+        button.borderShape = .roundedRectangle
         button.controlSize = .small
         button.font = .systemFont(ofSize: 11, weight: .medium)
         button.target = self
@@ -578,6 +641,7 @@ final class AppListView: NSView {
     }
 
     private func rebuildRows(from apps: [RunningAppInfo]) {
+        let selectedPIDs = Set(rows.lazy.filter(\.isSelected).map(\.pid))
         rows.removeAll(keepingCapacity: true)
         sectionHeaders.removeAll(keepingCapacity: true)
         anchorIdx = nil
@@ -603,7 +667,7 @@ final class AppListView: NSView {
         }
 
         var y = titleY + titleHeight + 6
-        appendRows(normal, isSafe: false, y: &y)
+        appendRows(normal, isSafe: false, selectedPIDs: selectedPIDs, y: &y)
 
         if !safe.isEmpty {
             if !normal.isEmpty { y += sectionSpacing - rowSpacing }
@@ -612,7 +676,7 @@ final class AppListView: NSView {
                 frame: NSRect(x: margin, y: y, width: contentWidth, height: sectionHeaderHeight)
             ))
             y += sectionHeaderHeight + 4
-            appendRows(safe, isSafe: true, y: &y)
+            appendRows(safe, isSafe: true, selectedPIDs: selectedPIDs, y: &y)
         }
 
         updateButtons()
@@ -620,19 +684,16 @@ final class AppListView: NSView {
 
     private func layoutButtons() {
         let contentBottom = rows.last?.frame.maxY ?? (titleY + titleHeight + 6 + rowHeight)
-        var y = contentBottom + 10
-        for button in [safeZoneButton, quitButton, quitAllButton] {
-            guard !button.isHidden else {
-                button.frame = .zero
-                continue
-            }
-            button.frame = NSRect(x: margin, y: y, width: contentWidth, height: buttonHeight)
-            y += buttonHeight + 6
-        }
-        setFrameSize(NSSize(width: margin * 2 + contentWidth, height: y - 6 + 10))
+        let actionY = contentBottom + 10
+        let actionWidth = (contentWidth - buttonGap) / 2
+        safeZoneButton.frame = NSRect(x: margin, y: actionY, width: actionWidth, height: buttonHeight)
+        quitButton.frame = NSRect(x: margin + actionWidth + buttonGap, y: actionY, width: actionWidth, height: buttonHeight)
+        let clearY = actionY + buttonHeight + buttonGap
+        quitAllButton.frame = NSRect(x: margin, y: clearY, width: contentWidth, height: clearButtonHeight)
+        setFrameSize(NSSize(width: margin * 2 + contentWidth, height: clearY + clearButtonHeight + 10))
     }
 
-    private func appendRows(_ infos: [(RunningAppInfo, String?, NSImage?)], isSafe: Bool, y: inout CGFloat) {
+    private func appendRows(_ infos: [(RunningAppInfo, String?, NSImage?)], isSafe: Bool, selectedPIDs: Set<pid_t> = [], y: inout CGFloat) {
         for (info, bundleID, icon) in infos {
             rows.append(Row(
                 frame: NSRect(x: margin, y: y, width: contentWidth, height: rowHeight),
@@ -642,7 +703,7 @@ final class AppListView: NSView {
                 memoryText: info.memoryText,
                 bundleIdentifier: bundleID,
                 isSafe: isSafe,
-                isSelected: false
+                isSelected: selectedPIDs.contains(info.pid)
             ))
             y += rowHeight + rowSpacing
         }
@@ -842,11 +903,9 @@ final class AppListView: NSView {
             safeZoneButton.title = "切换安全区"
         }
         safeZoneButton.isEnabled = safeEligibleCount > 0
-        safeZoneButton.isHidden = !safeZoneButton.isEnabled
 
         quitButton.title = "退出应用"
         quitButton.isEnabled = selectedCount > 0 && !hasSelectedSafeApp
-        quitButton.isHidden = !quitButton.isEnabled
 
         quitAllButton.title = "清空工作区"
         quitAllButton.isEnabled = canClearWorkspace
@@ -859,9 +918,6 @@ final class AppListView: NSView {
         let pids = rows.lazy.filter(\.isSelected).map(\.pid)
         for pid in pids {
             AppProcessTerminator.requestQuit(pid: pid)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.refresh()
         }
     }
 
@@ -880,9 +936,6 @@ final class AppListView: NSView {
             AppProcessTerminator.requestQuit(pid: pid)
         }
         RunningAppWindowCloser.closeAll(excludingBundleIDs: safeIDs, quittingPIDs: pids)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.refresh()
-        }
     }
 
     @objc private func toggleSelectedSafeZone() {
