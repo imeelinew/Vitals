@@ -48,7 +48,7 @@ Activity Monitor is complete, but heavy for “glance at resources, quit a few a
 - **Memory-sorted app list**: see regular running apps with icons and footprints; Finder is excluded.
 - **Safe zone**: keep protected apps and their windows untouched when clearing the workspace.
 - **Clear workspace**: press and hold to request a normal quit for unprotected apps and close Finder windows; apps can prompt to save or cancel quitting.
-- **Window management**: all shortcuts from Window, smooth movement and resizing, and maximized-window tracking after Dock or display changes.
+- **Keyboard shortcuts**: arrange, smoothly move, and resize windows, with maximized windows following Dock or display changes.
 - **Lightweight always-on**: sampling and UI are constrained for a low physical footprint while staying in the menu bar.
 
 ## Menu Bar
@@ -62,9 +62,9 @@ Open the menu for CPU and memory bars, a memory-pressure indicator, and the runn
 - App icons shown beside memory usage for quick recognition
 - Panel views are destroyed when the menu closes to avoid resident memory cost
 
-## Window management
+## Arrange and resize windows
 
-Window management starts in the background with Vitals; the menu, panel, and icon stay unchanged. On first launch, Vitals uses the standard macOS Accessibility permission prompt. Allow Vitals in System Settings → Privacy & Security → Accessibility; Window's permission does not transfer.
+Vitals provides keyboard shortcuts for the focused window. Allow Vitals in System Settings → Privacy & Security → Accessibility when prompted.
 
 | Shortcut | Action |
 | --- | --- |
@@ -77,7 +77,7 @@ Window management starts in the background with Vitals; the menu, panel, and ico
 
 Movement and resizing target 500 points/second at 60 fps, stop on release, and run no animation task while idle. Placement respects displays, the menu bar, and Dock. Maximized windows follow work-area changes until manually adjusted. Full-screen, minimized, or unsupported windows are ignored.
 
-When migrating, quit the standalone Window app and remove its login item to avoid shortcut conflicts. Vitals handles updates and launch at login for both features; quitting Vitals also stops window management.
+Quitting Vitals also stops its window shortcuts.
 
 ## Install
 
@@ -90,12 +90,6 @@ xcodebuild -project Vitals.xcodeproj -scheme Vitals -configuration Release build
 ```
 
 The app lands in DerivedData under `Build/Products/Release/Vitals.app`. Release builds enable dead-code stripping and strip for footprint checks.
-
-Run window geometry and held-key regression tests:
-
-```sh
-./Tests/run.sh
-```
 
 Build, sign, install, and restart the local app:
 
