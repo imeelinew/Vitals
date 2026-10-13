@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var instanceLockFD: Int32 = -1
     private var statusItem: NSStatusItem!
+    private let windowManagement = WindowManagementService()
     private let collector = MetricsCollector()
     private let updateService = UpdateService()
     private let panelMenuItem = NSMenuItem()
@@ -33,11 +34,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         collector.onUpdate = { [weak self] in
             self?.panelMenuItem.view?.needsDisplay = true
         }
+        windowManagement.start()
         collector.start()
         buildMenu()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        windowManagement.stop()
         guard instanceLockFD >= 0 else { return }
         flock(instanceLockFD, LOCK_UN)
         close(instanceLockFD)
