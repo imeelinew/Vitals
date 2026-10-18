@@ -632,6 +632,7 @@ final class AppListView: NSView {
             departingRows.removeAll()
             safeHeaderOpacity = 1
             emptyStateOpacity = 1
+            layoutButtons()
         }
         needsDisplay = true
     }
@@ -648,8 +649,10 @@ final class AppListView: NSView {
         let targetBottom = targets.last?.frame.maxY ?? (titleY + titleHeight + 6 + rowHeight)
         let previousBottom = previousHeight - (10 + buttonHeight + buttonGap + clearButtonHeight + 10)
         let startedAt = ProcessInfo.processInfo.systemUptime
+        let fadeDuration = removed.isEmpty && !(previousHeader != nil && targetHeader == nil) ? 0.0 : 0.10
+        let movementDuration = 0.20
 
-        func render(_ progress: CGFloat, in view: AppListView) {
+        func render(fade: CGFloat, movement progress: CGFloat, in view: AppListView) {
             view.rows = targets.map { target in
                 var row = target
                 if let start = starts[target.pid] {
@@ -665,8 +668,8 @@ final class AppListView: NSView {
             }
             view.departingRows = removed.map { source in
                 var row = source
-                row.frame.origin.x += 8 * progress
-                row.opacity *= 1 - progress
+                row.frame.origin.x += 8 * fade
+                row.opacity *= 1 - fade
                 return row
             }
             if let targetHeader {
@@ -678,23 +681,27 @@ final class AppListView: NSView {
                 let startOpacity = previousHeader == nil ? 0 : previousHeaderOpacity
                 view.safeHeaderOpacity = startOpacity + (1 - startOpacity) * progress
             } else {
-                view.safeHeaderFrame = progress < 1 ? previousHeader : nil
-                view.safeHeaderOpacity = previousHeaderOpacity * (1 - progress)
+                view.safeHeaderFrame = fade < 1 ? previousHeader : nil
+                view.safeHeaderOpacity = previousHeaderOpacity * (1 - fade)
             }
             view.emptyStateOpacity = previousRows.isEmpty ? 1 : progress
             view.layoutButtons(contentBottom: previousBottom + (targetBottom - previousBottom) * progress)
             view.needsDisplay = true
         }
 
-        render(0, in: self)
+        // Finish fading removed content before closing its space. Otherwise
+        // the safe section and buttons travel through rows that are still visible.
+        render(fade: 0, movement: 0, in: self)
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
             guard let self else {
                 timer.invalidate()
                 return
             }
-            let fraction = min((ProcessInfo.processInfo.systemUptime - startedAt) / 0.24, 1)
-            render(CGFloat(1 - pow(1 - fraction, 3)), in: self)
-            if fraction >= 1 {
+            let elapsed = ProcessInfo.processInfo.systemUptime - startedAt
+            let fade = fadeDuration == 0 ? 1 : min(elapsed / fadeDuration, 1)
+            let movement = min(max((elapsed - fadeDuration) / movementDuration, 0), 1)
+            render(fade: CGFloat(fade), movement: CGFloat(1 - pow(1 - movement, 3)), in: self)
+            if movement >= 1 {
                 timer.invalidate()
                 self.listAnimationTimer = nil
                 self.departingRows.removeAll()
@@ -738,7 +745,6 @@ final class AppListView: NSView {
         }
 
         updateButtons()
-        layoutButtons()
     }
 
     private func layoutButtons(contentBottom: CGFloat? = nil) {
@@ -836,7 +842,7 @@ final class AppListView: NSView {
             in: iconRect,
             from: NSRect(origin: .zero, size: AppIcon.size),
             operation: .sourceOver,
-            fraction: 1,
+            fraction: row.opacity,
             respectFlipped: true,
             hints: nil
         )
