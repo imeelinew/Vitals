@@ -496,7 +496,7 @@ private enum RunningAppWindowCloser {
 
 final class AppListView: NSView {
     private struct Row {
-        let frame: NSRect
+        var frame: NSRect
         let pid: pid_t
         let icon: NSImage?
         let name: String
@@ -504,9 +504,14 @@ final class AppListView: NSView {
         let bundleIdentifier: String?
         let isSafe: Bool
         var isSelected: Bool
+        var opacity: CGFloat = 1
     }
 
     private var rows: [Row] = []
+    private var departingRows: [Row] = []
+    private var listAnimationTimer: Timer?
+    private var safeHeaderOpacity: CGFloat = 1
+    private var emptyStateOpacity: CGFloat = 1
     private var safeHeaderFrame: NSRect?
     private var anchorIdx: Int?
     private var dragStartIdx: Int?
@@ -570,6 +575,11 @@ final class AppListView: NSView {
         super.viewDidMoveToWindow()
         runningAppsTimer?.invalidate()
         runningAppsTimer = nil
+        if window == nil {
+            listAnimationTimer?.invalidate()
+            listAnimationTimer = nil
+            departingRows.removeAll()
+        }
         guard window != nil else { return }
 
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
@@ -582,6 +592,7 @@ final class AppListView: NSView {
 
     deinit {
         runningAppsTimer?.invalidate()
+        listAnimationTimer?.invalidate()
     }
 
     private func refreshIfRunningAppsChanged() {
@@ -602,10 +613,95 @@ final class AppListView: NSView {
     }
 
     func refresh() {
+        let previousRows = rows
+        let previousHeader = safeHeaderFrame
+        let previousHeaderOpacity = safeHeaderOpacity
+        let previousHeight = frame.height
+        listAnimationTimer?.invalidate()
+        listAnimationTimer = nil
         autoreleasepool {
             rebuildRows(from: AppListSection.collectAll())
         }
+        let layoutChanged = previousRows.map(\.pid) != rows.map(\.pid)
+            || previousHeader != safeHeaderFrame
+        if layoutChanged, window?.isVisible == true,
+           !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            animateListChange(from: previousRows, header: previousHeader,
+                              headerOpacity: previousHeaderOpacity, height: previousHeight)
+        } else {
+            departingRows.removeAll()
+            safeHeaderOpacity = 1
+            emptyStateOpacity = 1
+        }
         needsDisplay = true
+    }
+
+    private func animateListChange(from previousRows: [Row], header previousHeader: NSRect?,
+                                   headerOpacity previousHeaderOpacity: CGFloat, height previousHeight: CGFloat) {
+        let targets = rows
+        let targetHeader = safeHeaderFrame
+        let targetPIDs = Set(targets.map(\.pid))
+        let starts = Dictionary(uniqueKeysWithValues: previousRows.map { ($0.pid, $0) })
+        let removed = previousRows.filter { !targetPIDs.contains($0.pid) } + departingRows
+        // Derive the old content edge from the view height so a removed last row
+        // also animates the buttons and menu height instead of snapping them.
+        let targetBottom = targets.last?.frame.maxY ?? (titleY + titleHeight + 6 + rowHeight)
+        let previousBottom = previousHeight - (10 + buttonHeight + buttonGap + clearButtonHeight + 10)
+        let startedAt = ProcessInfo.processInfo.systemUptime
+
+        func render(_ progress: CGFloat, in view: AppListView) {
+            view.rows = targets.map { target in
+                var row = target
+                if let start = starts[target.pid] {
+                    row.frame.origin.y = start.frame.minY + (target.frame.minY - start.frame.minY) * progress
+                    row.opacity = start.opacity + (1 - start.opacity) * progress
+                } else {
+                    row.frame.origin.y += 6 * (1 - progress)
+                    row.opacity = progress
+                }
+                // Selection can change while the animation is running.
+                row.isSelected = view.rows.first(where: { $0.pid == target.pid })?.isSelected ?? target.isSelected
+                return row
+            }
+            view.departingRows = removed.map { source in
+                var row = source
+                row.frame.origin.x += 8 * progress
+                row.opacity *= 1 - progress
+                return row
+            }
+            if let targetHeader {
+                var header = targetHeader
+                if let previousHeader {
+                    header.origin.y = previousHeader.minY + (targetHeader.minY - previousHeader.minY) * progress
+                }
+                view.safeHeaderFrame = header
+                let startOpacity = previousHeader == nil ? 0 : previousHeaderOpacity
+                view.safeHeaderOpacity = startOpacity + (1 - startOpacity) * progress
+            } else {
+                view.safeHeaderFrame = progress < 1 ? previousHeader : nil
+                view.safeHeaderOpacity = previousHeaderOpacity * (1 - progress)
+            }
+            view.emptyStateOpacity = previousRows.isEmpty ? 1 : progress
+            view.layoutButtons(contentBottom: previousBottom + (targetBottom - previousBottom) * progress)
+            view.needsDisplay = true
+        }
+
+        render(0, in: self)
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
+            guard let self else {
+                timer.invalidate()
+                return
+            }
+            let fraction = min((ProcessInfo.processInfo.systemUptime - startedAt) / 0.24, 1)
+            render(CGFloat(1 - pow(1 - fraction, 3)), in: self)
+            if fraction >= 1 {
+                timer.invalidate()
+                self.listAnimationTimer = nil
+                self.departingRows.removeAll()
+            }
+        }
+        listAnimationTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func rebuildRows(from apps: [RunningAppInfo]) {
@@ -645,8 +741,8 @@ final class AppListView: NSView {
         layoutButtons()
     }
 
-    private func layoutButtons() {
-        let contentBottom = rows.last?.frame.maxY ?? (titleY + titleHeight + 6 + rowHeight)
+    private func layoutButtons(contentBottom: CGFloat? = nil) {
+        let contentBottom = contentBottom ?? rows.last?.frame.maxY ?? (titleY + titleHeight + 6 + rowHeight)
         let actionY = contentBottom + 10
         let actionWidth = (contentWidth - buttonGap) / 2
         safeZoneButton.frame = NSRect(x: margin, y: actionY, width: actionWidth, height: buttonHeight)
@@ -680,25 +776,33 @@ final class AppListView: NSView {
         )
 
         if rows.isEmpty {
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current?.cgContext.setAlpha(emptyStateOpacity)
             ("（无其他应用）" as NSString).draw(
                 in: NSRect(x: margin, y: titleY + titleHeight + 6, width: contentWidth, height: rowHeight),
                 withAttributes: secondaryAttributes
             )
-            return
+            NSGraphicsContext.restoreGraphicsState()
         }
 
         if let frame = safeHeaderFrame {
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current?.cgContext.setAlpha(safeHeaderOpacity)
             ("安全区" as NSString).draw(in: frame, withAttributes: secondaryAttributes)
             NSColor.separatorColor.setFill()
             NSRect(x: margin + 48, y: frame.midY, width: contentWidth - 48, height: 1).fill()
+            NSGraphicsContext.restoreGraphicsState()
         }
 
-        for row in rows where dirtyRect.intersects(row.frame) {
+        for row in departingRows + rows where dirtyRect.intersects(row.frame) {
             drawRow(row)
         }
     }
 
     private func drawRow(_ row: Row) {
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current?.cgContext.setAlpha(row.opacity)
         let checkboxRect = NSRect(
             x: row.frame.minX + 1,
             y: row.frame.midY - checkboxSize / 2,
