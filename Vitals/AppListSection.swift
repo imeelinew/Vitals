@@ -518,7 +518,8 @@ final class AppListView: NSView {
     private var dragLastIdx: Int?
     private var dragStartPoint: NSPoint?
     private var dragDidMove = false
-    private var dragStartSelected = false
+    private var dragDirection = 0
+    private var dragTargetSelected = false
     private var runningAppsTimer: Timer?
     private let safeZoneButton = NSButton()
     private let quitButton = DestructiveButton()
@@ -720,6 +721,7 @@ final class AppListView: NSView {
         dragLastIdx = nil
         dragStartPoint = nil
         dragDidMove = false
+        dragDirection = 0
         let safeIDs = SafeAppPrefs.bundleIDs()
         var normal: [RunningAppInfo] = []
         var safe: [RunningAppInfo] = []
@@ -869,8 +871,9 @@ final class AppListView: NSView {
         dragStartIdx = rowIndex(at: event.locationInWindow)
         dragLastIdx = dragStartIdx
         dragDidMove = false
+        dragDirection = 0
         if let start = dragStartIdx {
-            dragStartSelected = rows[start].isSelected
+            dragTargetSelected = !rows[start].isSelected
         }
     }
 
@@ -880,11 +883,23 @@ final class AppListView: NSView {
         let dx = point.x - startPoint.x
         let dy = point.y - startPoint.y
         if !dragDidMove, sqrt(dx * dx + dy * dy) < 3 { return }
-        dragDidMove = true
-        guard let current = rowIndex(at: event.locationInWindow), current != dragLastIdx else { return }
-        let target = !dragStartSelected
-        for index in min(start, current)...max(start, current) {
-            rows[index].isSelected = target
+        if !dragDidMove {
+            dragDidMove = true
+            rows[start].isSelected = dragTargetSelected
+            anchorIdx = start
+            needsDisplay = true
+            updateButtons()
+        }
+        guard let current = rowIndex(at: event.locationInWindow),
+              let last = dragLastIdx, current != last else { return }
+        let direction = current > last ? 1 : -1
+        if dragDirection != 0, direction != dragDirection {
+            dragTargetSelected.toggle()
+        }
+        dragDirection = direction
+        // Include the turning row so reversing also updates the stroke's endpoint.
+        for index in min(last, current)...max(last, current) {
+            rows[index].isSelected = dragTargetSelected
         }
         dragLastIdx = current
         needsDisplay = true
@@ -897,6 +912,7 @@ final class AppListView: NSView {
             dragLastIdx = nil
             dragStartPoint = nil
             dragDidMove = false
+            dragDirection = 0
         }
 
         guard let start = dragStartIdx, !dragDidMove else { return }
