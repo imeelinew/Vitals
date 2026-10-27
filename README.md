@@ -5,20 +5,15 @@
 <h1 align="center">Vitals</h1>
 
 <p align="center">
-  一个住在 macOS 菜单栏里的轻量系统监控。<br>
-  CPU、内存、内存压力、窗口快捷键，以及长按清空工作区。
+  A lightweight system monitor that lives in the macOS menu bar.<br>
+  CPU, memory, memory pressure, window shortcuts, and press-and-hold workspace clearing.
 </p>
 
 
 <p align="center">
-  <a href="https://github.com/imeelinew/Vitals/releases">下载</a> ·
-  <a href="#安装">安装</a> ·
-  <a href="#从源码构建">从源码构建</a>
-</p>
-
-<p align="center">
-  <a href="README.md">简体中文</a>
-  <a href="README.en.md">English</a>
+  <a href="https://github.com/imeelinew/Vitals/releases">Download</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#build-from-source">Build from source</a>
 </p>
 
 <p align="center">
@@ -31,72 +26,72 @@
 ---
 
 <p align="center">
-  <img alt="Vitals 菜单栏面板" src=".github/assets/app.png" width="360">
+  <img alt="Vitals menu bar panel" src=".github/assets/app.png" width="360">
 </p>
 
-## 简介
+## About
 
-Vitals 是一个常驻菜单栏的 macOS 系统监控工具，适合那些想随时看见 CPU、内存和内存压力，又希望快速关掉占内存应用、腾出工作区的人。
+Vitals is a menu-bar macOS system monitor for people who want a quick view of CPU, memory, and memory pressure, and an easy way to quit memory-heavy apps and clear the workspace.
 
-它刻意保持很轻：用原生 AppKit 自绘菜单界面，避免拉入 SwiftUI 一类重依赖，目标是把自身物理 footprint 压在很低的水平，好让监控工具本身不成为负担。
+It stays intentionally light: the menu UI is drawn with native AppKit, avoiding heavy dependencies like SwiftUI, so the monitor itself does not become part of the problem.
 
-## 为什么开发 Vitals
+## Why Vitals
 
-活动监视器很完整，但对「看一眼资源、关掉几个占地方的 App」来说往往太重。Vitals 把最常用的几件事收进菜单栏：状态一眼可见，应用按内存排序，安全区里的应用不会被一键清掉。
+Activity Monitor is complete, but heavy for “glance at resources, quit a few apps.” Vitals puts the common actions in the menu bar: status at a glance, apps sorted by memory, and a safe zone that never gets cleared by bulk quit.
 
-- **菜单栏优先**：菜单栏只显示仪表图标，展开后在面板顶部查看 CPU、内存占用和内存压力。
-- **按内存排序的应用列表**：带图标查看当前运行中的常规应用及其占用，Finder 不显示在列表中。
-- **安全区**：保护应用及其窗口，清空工作区时保持不动。
-- **清空工作区**：长按确认后请求未保护的应用正常退出，并关闭 Finder 窗口；应用可以提示保存或取消退出。
-- **窗口管理**：通过快捷键摆放、平滑移动和缩放窗口，并在 Dock / 显示器变化后自动调整最大化窗口。
-- **轻量常驻**：为长时间挂在菜单栏而设计，采样与界面都按低 footprint 约束实现。
+- **Menu bar first**: a gauge icon sits in the menu bar; open it for CPU, memory usage, and memory pressure at the top of the panel.
+- **Memory-sorted app list**: see regular running apps with icons and footprints; Finder is excluded.
+- **Safe zone**: keep protected apps and their windows untouched when clearing the workspace.
+- **Clear workspace**: press and hold to request a normal quit for unprotected apps and close Finder windows; apps can prompt to save or cancel quitting.
+- **Keyboard shortcuts**: arrange, smoothly move, and resize windows, with maximized windows following Dock or display changes.
+- **Lightweight always-on**: sampling and UI are constrained for a low physical footprint while staying in the menu bar.
 
-## 菜单栏
+## Menu Bar
 
-打开菜单即可看到 CPU、内存进度条和内存压力指示，以及当前运行中的应用列表。你可以勾选后退出选中应用，也可以长按清空工作区；安全区里的应用会单独列出，不会被批量操作误伤。
+Open the menu for CPU and memory bars, a memory-pressure indicator, and the running-app list. Quit selected apps, or press and hold to clear the workspace; safe-zone apps are listed separately and excluded from bulk actions.
 
-## 其他功能
+## More features
 
-- 开机自启
-- 退出选中应用时关闭其全部窗口
-- 应用图标与占用一并展示，方便快速识别
-- 菜单关闭后销毁面板视图，避免常驻占内存
+- Launch at login
+- Quitting selected apps also closes all of their windows
+- App icons shown beside memory usage for quick recognition
+- Panel views are destroyed when the menu closes to avoid resident memory cost
 
-## 窗口管理
+## Arrange and resize windows
 
-Vitals 支持用快捷键管理当前聚焦的窗口。首次使用需要辅助功能权限，请在「系统设置 → 隐私与安全性 → 辅助功能」中允许 Vitals。
+Vitals provides keyboard shortcuts for the focused window. Allow Vitals in System Settings → Privacy & Security → Accessibility when prompted.
 
-| 快捷键 | 操作 |
+| Shortcut | Action |
 | --- | --- |
-| `Command + ↑` | 最大化到当前屏幕可用区域 |
-| `Command + ← / →` | 左半屏 / 右半屏 |
-| `Command + ↓` | 调整为 998 × 836，并居中 |
-| `Option + Command + ← / →` | 按住连续减小 / 增大宽度，中心不动 |
-| `Option + Command + ↑ / ↓` | 按住连续增大 / 减小高度，中心不动 |
-| `Control + Option + 方向键` | 按住向对应方向平滑移动，尺寸不变 |
+| `Command + ↑` | Maximize within the current display's work area |
+| `Command + ← / →` | Left / right half |
+| `Command + ↓` | Resize to 998 × 836 and center |
+| `Option + Command + ← / →` | Hold to decrease / increase width around the center |
+| `Option + Command + ↑ / ↓` | Hold to increase / decrease height around the center |
+| `Control + Option + Arrow` | Hold to move smoothly without resizing |
 
-移动和缩放以约 500 点/秒、60 fps 为目标，松开即停，空闲时没有动画任务。操作适配多显示器，并避开菜单栏和 Dock；最大化窗口会在工作区变化后重新贴合，手动调整后停止跟踪。全屏、最小化或不支持对应操作的窗口会被忽略。
+Movement and resizing target 500 points/second at 60 fps, stop on release, and run no animation task while idle. Placement respects displays, the menu bar, and Dock. Maximized windows follow work-area changes until manually adjusted. Full-screen, minimized, or unsupported windows are ignored.
 
-退出 Vitals 也会停止窗口快捷键。
+Quitting Vitals also stops its window shortcuts.
 
-## 安装
+## Install
 
-从 [Releases 页面](https://github.com/imeelinew/Vitals/releases)下载最新版，解压后将 `Vitals.app` 拖入「应用程序」文件夹。需要 macOS 26 或更高版本。
+Download the latest build from the [Releases page](https://github.com/imeelinew/Vitals/releases), then drag `Vitals.app` into Applications. Requires macOS 26 or later.
 
-## 从源码构建
+## Build from source
 
 ```sh
 xcodebuild -project Vitals.xcodeproj -scheme Vitals -configuration Release build
 ```
 
-构建产物在 Xcode DerivedData 的 `Build/Products/Release/Vitals.app`。Release 配置开启死代码剥离与 strip，便于验证 footprint。
+The app lands in DerivedData under `Build/Products/Release/Vitals.app`. Release builds enable dead-code stripping and strip for footprint checks.
 
-构建、签名、安装并重新启动本机版本：
+Build, sign, install, and restart the local app:
 
 ```sh
 ./scripts/install.sh
 ```
 
-## 许可
+## License
 
-本项目采用 [MIT](LICENSE) 许可证。
+This project is licensed under the [MIT](LICENSE) License.
